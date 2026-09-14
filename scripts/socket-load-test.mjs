@@ -40,19 +40,37 @@ function waitForMessage(socket, expectedType, timeoutMs = 15_000) {
   });
 }
 
-async function connect(code, token) {
+async function connectOnce(code, token) {
   const startedAt = performance.now();
   const socket = new WebSocket(
     `${SOCKET_URL}/api/rooms/${code}/socket`,
     ["emparejao", token],
   );
   const snapshot = waitForMessage(socket, "room_snapshot");
-  await new Promise((resolve, reject) => {
-    socket.addEventListener("open", resolve, { once: true });
-    socket.addEventListener("error", reject, { once: true });
-  });
-  await snapshot;
-  return { socket, latency: performance.now() - startedAt };
+  try {
+    await new Promise((resolve, reject) => {
+      socket.addEventListener("open", resolve, { once: true });
+      socket.addEventListener("error", reject, { once: true });
+    });
+    await snapshot;
+    return { socket, latency: performance.now() - startedAt };
+  } catch {
+    socket.close();
+    await snapshot.catch(() => undefined);
+    throw new Error("No se pudo abrir el WebSocket.");
+  }
+}
+
+async function connect(code, token) {
+  for (let attempt = 0; attempt < 6; attempt += 1) {
+    try {
+      return await connectOnce(code, token);
+    } catch (error) {
+      if (attempt === 5) throw error;
+      await new Promise((resolve) => setTimeout(resolve, 250 * 2 ** attempt));
+    }
+  }
+  throw new Error("No se pudo abrir el WebSocket después de varios intentos.");
 }
 
 function percentile(values, percentage) {

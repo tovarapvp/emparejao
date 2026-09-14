@@ -126,6 +126,8 @@ La prueba sostenida abre todos los sockets y verifica que cada teléfono simulad
 npm run test:socket-load -- https://tu-worker.workers.dev 800
 ```
 
+Para certificar 800 conexiones reales, ejecuta esta prueba desde varios generadores o ubicaciones. Un solo equipo y una sola IP pueden recibir límites transitorios de apertura de conexiones que no representan a 800 teléfonos distribuidos.
+
 ## Seguridad y privacidad
 
 - Los tokens del organizador y los participantes deben tratarse como credenciales privadas.
