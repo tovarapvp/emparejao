@@ -13,6 +13,21 @@ async function request(path, init) {
   return body;
 }
 
+function validateVisualColors(results, message) {
+  const byRed = new Map(results.map((result) => [result.redNumber, result]));
+  const assignedNumbers = { red: new Set(), blue: new Set() };
+
+  for (const result of results) {
+    const color = result.redNumber > result.blueNumber ? "red" : "blue";
+    if (assignedNumbers[color].has(result.redNumber)) throw new Error(message);
+    assignedNumbers[color].add(result.redNumber);
+
+    const partner = byRed.get(result.blueNumber);
+    const partnerColor = partner?.redNumber > partner?.blueNumber ? "red" : "blue";
+    if (!partner || partnerColor === color) throw new Error(message);
+  }
+}
+
 const room = await request("/api/rooms", {
   method: "POST",
   headers: { "content-type": "application/json" },
@@ -64,6 +79,10 @@ for (const item of results) {
     throw new Error("Una persona fue emparejada consigo misma.");
   }
 }
+validateVisualColors(
+  results.map((item) => item.result),
+  "Se repitió un número dentro del mismo color o una pareja recibió el mismo color.",
+);
 
 console.log(`OK: ${TEST_PARTICIPANTS} participantes creados, emparejados y verificados.`);
 
@@ -174,5 +193,9 @@ for (const item of allWildcardResults) {
     throw new Error("El emparejamiento con organizador comodín no es simétrico.");
   }
 }
+validateVisualColors(
+  allWildcardResults,
+  "El comodín produjo colores iguales o números repetidos dentro de un color.",
+);
 
 console.log("OK: grupo impar resuelto al sumar al organizador como comodín.");

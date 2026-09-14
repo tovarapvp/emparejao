@@ -47,6 +47,10 @@ const LANGUAGE = {
   ES: "es",
   EN: "en",
 } as const;
+const TICKET_COLOR = {
+  RED: "red",
+  BLUE: "blue",
+} as const;
 const NOTIFICATION_CAPABILITY = {
   CHECKING: "checking",
   READY: "ready",
@@ -113,9 +117,9 @@ const ES_COPY = {
   shufflingCards: "Mezclando las tarjetas",
   virtualCard: "Tu tarjeta virtual",
   ready: "¡Listo",
-  matchInstruction: "Busca a la persona cuyo número rojo coincide con tu número azul.",
+  matchInstruction: "Tu ficha tiene un color y número únicos. Busca la combinación indicada debajo.",
   yourNumber: "Tu número",
-  yourMatch: "Tu pareja",
+  yourMatch: "Busca",
   privateCard: "Solo tú puedes ver esta tarjeta",
   inside: "Ya estás dentro",
   hello: "Hola",
@@ -240,9 +244,9 @@ const EN_COPY: Record<TranslationKey, string> = {
   shufflingCards: "Shuffling the cards",
   virtualCard: "Your virtual card",
   ready: "Ready",
-  matchInstruction: "Find the person whose red number matches your blue number.",
+  matchInstruction: "Your ticket has a unique color and number. Find the combination shown below.",
   yourNumber: "Your number",
-  yourMatch: "Your match",
+  yourMatch: "Find",
   privateCard: "Only you can see this card",
   inside: "You’re in",
   hello: "Hi",
@@ -1175,6 +1179,9 @@ export default function Home() {
   const hasOddGroup = participantCount > 0 && participantCount % 2 !== 0;
 
   if (view === VIEW.HOST && session) {
+    const hostOwnsRed = hostRoom?.result
+      ? hostRoom.result.redNumber > hostRoom.result.blueNumber
+      : true;
     return (
       <main className="app-shell host-shell">
         <header className="topbar">
@@ -1229,8 +1236,11 @@ export default function Home() {
               <div className="host-result-card">
                 <p>{copy.wildcardCard}</p>
                 <div>
-                  <span><small>{copy.red}</small><strong>{hostRoom.result.redNumber}</strong></span>
-                  <span><small>{copy.blue}</small><strong>{hostRoom.result.blueNumber}</strong></span>
+                  <span className={`host-ticket ${hostOwnsRed ? TICKET_COLOR.RED : TICKET_COLOR.BLUE}`}>
+                    <small>{hostOwnsRed ? copy.red : copy.blue}</small>
+                    <strong>{hostRoom.result.redNumber}</strong>
+                  </span>
+                  <span className="host-match-target"><small>{copy.yourMatch} {hostOwnsRed ? copy.blue : copy.red}</small><strong>{hostRoom.result.blueNumber}</strong></span>
                 </div>
               </div>
             )}
@@ -1302,6 +1312,7 @@ export default function Home() {
 
   if (view === VIEW.PARTICIPANT && session) {
     const result = participantRoom?.result;
+    const ownsRed = result ? result.redNumber > result.blueNumber : true;
     return (
       <main className="app-shell participant-shell">
         <header className="topbar">
@@ -1321,8 +1332,16 @@ export default function Home() {
               <h1>{copy.ready}, {participantRoom?.name}!</h1>
               <p>{copy.matchInstruction}</p>
               <div className="ticket-result">
-                <div className="ticket-half red-half"><span>{copy.yourNumber}</span><strong>{result.redNumber}</strong><small>{copy.red}</small></div>
-                <div className="ticket-half blue-half"><span>{copy.yourMatch}</span><strong>{result.blueNumber}</strong><small>{copy.blue}</small></div>
+                <div className={`ticket-half ${ownsRed ? "red-half" : "blue-half"}`}>
+                  <span>{copy.yourNumber}</span>
+                  <strong>{result.redNumber}</strong>
+                  <small>{ownsRed ? copy.red : copy.blue}</small>
+                </div>
+              </div>
+              <div className={`match-target ${ownsRed ? TICKET_COLOR.BLUE : TICKET_COLOR.RED}`}>
+                <span>{copy.yourMatch}</span>
+                <strong>{result.blueNumber}</strong>
+                <small>{ownsRed ? copy.blue : copy.red}</small>
               </div>
               <div className="privacy-note"><Check /> {copy.privateCard}</div>
             </div>
