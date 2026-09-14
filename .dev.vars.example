@@ -1,3 +1,5 @@
 VAPID_PUBLIC_KEY="TU_CLAVE_PUBLICA_BASE64URL"
 VAPID_PRIVATE_KEY="TU_CLAVE_PRIVADA_BASE64URL"
 VAPID_SUBJECT="mailto:tu-correo@example.com"
+# Opcional: webhook entrante de Discord o Slack para alertas operativas.
+# ALERT_WEBHOOK_URL="https://..."

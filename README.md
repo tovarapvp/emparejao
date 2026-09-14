@@ -15,6 +15,9 @@ Sorteos de parejas en vivo para eventos. El organizador crea una sala, define un
 - Recuperación automática del panel del organizador en el mismo dispositivo.
 - Web Push para avisar aunque la web esté cerrada.
 - Interfaz móvil y PWA instalable.
+- Limpieza automática por hora de salas vencidas y sus datos asociados.
+- Rate limiting para creación, ingreso y conexiones WebSocket.
+- Logs estructurados, endpoint de salud y alertas opcionales por webhook.
 
 ## Tecnologías
 
@@ -99,6 +102,27 @@ El polling de baja frecuencia queda únicamente como recuperación ante pérdida
    El primer despliegue crea automáticamente la clase SQLite `RoomHub` y su binding `ROOM_HUB`.
 6. Antes de usar la aplicación, ejecuta en la consola SQL de D1 los archivos `drizzle/0000_stormy_pet_avengers.sql` y `drizzle/0001_great_mystique.sql`, en ese orden.
 7. Después del primer despliegue configura `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY` y `VAPID_SUBJECT` en **Settings → Variables and Secrets**. Guarda las tres como secretos para que Wrangler no las reemplace.
+
+El despliegue también crea un Cron Trigger que ejecuta la limpieza cada hora. No hace falta agregarlo manualmente en el panel.
+
+## Operación, límites y alertas
+
+Los límites están configurados por minuto y por ubicación de Cloudflare:
+
+- Creación: 10 salas por dirección de origen.
+- Ingreso: 1.000 intentos por PIN. Este margen permite que entren los 800 asistentes incluso si comparten Wi-Fi.
+- WebSocket: 2.400 aperturas por PIN para tolerar la conexión inicial y reconexiones móviles.
+- Alertas salientes: una por tipo de incidente y minuto para evitar tormentas de mensajes.
+
+Cloudflare aplica estos contadores de forma distribuida y eventualmente consistente: sirven para contener abuso, no como sistema exacto de cuotas.
+
+Workers Logs queda habilitado con muestreo del 100 %. Los eventos importantes se guardan como JSON y se pueden filtrar por `event`, por ejemplo `room_api_error`, `rate_limit_blocked`, `expired_rooms_cleanup_failed` o `worker_request_failed`. Para verlos abre **Workers & Pages → emparejao → Observability**.
+
+La ruta pública `GET /api/health` comprueba que el Worker y D1 respondan. Puedes vigilarla cada cinco minutos con un monitor gratuito como UptimeRobot; debe devolver HTTP 200 y `{"status":"ok"}`.
+
+Para recibir alertas inmediatas de errores 5xx o fallos de limpieza, crea un webhook entrante gratuito en Discord o Slack y guarda su URL como secreto `ALERT_WEBHOOK_URL` en **Settings → Variables and Secrets**. Es opcional: si no existe, los errores siguen quedando registrados en Workers Logs. Nunca incluyas esa URL en Git.
+
+Después de desplegar, verifica la ejecución del cron buscando el evento `expired_rooms_cleanup` en Observability. Se ejecuta en el minuto 17 de cada hora, en UTC.
 
 El UUID de D1 no es una contraseña, pero la clave privada VAPID sí lo es y nunca debe incluirse en Git.
 

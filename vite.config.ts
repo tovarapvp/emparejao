@@ -39,6 +39,39 @@ const localBindingConfig = {
       new_sqlite_classes: ["RoomHub"],
     },
   ],
+  triggers: {
+    crons: ["17 * * * *"],
+  },
+  ratelimits: [
+    {
+      name: "ROOM_CREATE_LIMITER",
+      namespace_id: "21001",
+      simple: { limit: 10, period: 60 as const },
+    },
+    {
+      name: "ROOM_JOIN_LIMITER",
+      namespace_id: "21002",
+      simple: { limit: 1000, period: 60 as const },
+    },
+    {
+      name: "ROOM_SOCKET_LIMITER",
+      namespace_id: "21003",
+      simple: { limit: 2400, period: 60 as const },
+    },
+    {
+      name: "ALERT_LIMITER",
+      namespace_id: "21004",
+      simple: { limit: 1, period: 60 as const },
+    },
+  ],
+  observability: {
+    enabled: true,
+    logs: {
+      enabled: true,
+      invocation_logs: true,
+      head_sampling_rate: 1,
+    },
+  },
   d1_databases: d1
     ? [
         {

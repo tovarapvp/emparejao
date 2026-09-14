@@ -1,3 +1,5 @@
+import { errorDetails, logEvent } from "@/lib/observability";
+
 export const ROOM_STATUS = {
   LOBBY: "lobby",
   DRAWING: "drawing",
@@ -35,7 +37,7 @@ export function normalizeName(value: string) {
 
 export function roomError(error: unknown) {
   const message = error instanceof Error ? error.message : "Error inesperado";
-  console.error("room-api", error);
+  logEvent("error", "room_api_error", errorDetails(error));
   return Response.json(
     { error: message.includes("D1") ? "El servicio de salas no está disponible." : message },
     { status: 500 },
