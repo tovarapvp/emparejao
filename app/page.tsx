@@ -441,7 +441,26 @@ export default function Home() {
   if (view === VIEW.HOST && session) {
     return (
       <main className="app-shell host-shell">
-        <header className="topbar"><Brand /><button className="quiet-link" onClick={leaveSession}>Salir</button></header>
+        <header className="topbar">
+          <Brand />
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <button className="quiet-link" type="button">Salir</button>
+            </AlertDialogTrigger>
+            <AlertDialogContent className="close-dialog">
+              <AlertDialogHeader>
+                <AlertDialogTitle>¿Quieres eliminar tu acceso?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  La sala seguirá activa durante 24 horas, pero este dispositivo perderá el acceso para administrarla. Si solo quieres cerrar la ventana, no necesitas salir.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Conservar acceso</AlertDialogCancel>
+                <AlertDialogAction onClick={leaveSession}>Salir y eliminar acceso</AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+        </header>
         <SupportCta />
         <section className="host-grid">
           <div className="invite-panel">
