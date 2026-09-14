@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Pareo — Sorteos de parejas en vivo",
+  title: "Emparejao — Sorteos de parejas en vivo",
   description: "Define el cupo, invita a tu grupo y revela todas las parejas al mismo tiempo.",
   icons: {
     icon: "/favicon.svg",

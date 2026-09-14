@@ -1,7 +1,7 @@
 import { getRawDb } from "@/db";
 import { roomError } from "@/lib/room-api";
 
-const ROOM_LIFETIME_MS = 6 * 60 * 60 * 1000;
+const ROOM_LIFETIME_MS = 24 * 60 * 60 * 1000;
 
 function roomCode() {
   const value = new Uint32Array(1);

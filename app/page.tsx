@@ -8,6 +8,7 @@ import {
   Crown,
   LoaderCircle,
   ScanLine,
+  Share2,
   Sparkles,
   Ticket,
   Users,
@@ -36,6 +37,9 @@ const VIEW = {
   HOST: "host",
   PARTICIPANT: "participant",
 } as const;
+
+const SESSION_KEY = "emparejao-session";
+const LEGACY_SESSION_KEY = "pareo-session";
 
 type View = (typeof VIEW)[keyof typeof VIEW];
 
@@ -105,13 +109,31 @@ async function api<T>(path: string, init?: RequestInit) {
   return body;
 }
 
+async function copyText(value: string) {
+  if (navigator.clipboard && window.isSecureContext) {
+    await navigator.clipboard.writeText(value);
+    return;
+  }
+
+  const field = document.createElement("textarea");
+  field.value = value;
+  field.setAttribute("readonly", "");
+  field.style.position = "fixed";
+  field.style.opacity = "0";
+  document.body.append(field);
+  field.select();
+  const copied = document.execCommand("copy");
+  field.remove();
+  if (!copied) throw new Error("Copy command failed");
+}
+
 function Brand() {
   return (
     <div
       className="brand-lockup"
     >
       <span className="brand-mark"><Ticket aria-hidden="true" /></span>
-      <span>Pareo</span>
+      <span>Emparejao</span>
     </div>
   );
 }
@@ -126,7 +148,7 @@ function SupportCta() {
       aria-label="Apoyar a Pulse Routines en Instagram"
     >
       <span className="support-copy">
-        <small>¿Te gustó Pareo?</small>
+        <small>¿Te gustó Emparejao?</small>
         <strong>Apoya este emprendimiento maracucho</strong>
         <em><AtSign aria-hidden="true" /> pulseroutines</em>
       </span>
@@ -158,24 +180,36 @@ export default function Home() {
   const [qrDataUrl, setQrDataUrl] = useState("");
   const [busy, setBusy] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [shared, setShared] = useState(false);
   const [error, setError] = useState("");
   const [revealing, setRevealing] = useState(false);
 
   useEffect(() => {
     const restoreTimer = window.setTimeout(() => {
       const roomFromUrl = new URLSearchParams(window.location.search).get("room") ?? "";
-      const saved = sessionStorage.getItem("pareo-session");
+      const saved =
+        sessionStorage.getItem(SESSION_KEY) ??
+        localStorage.getItem(SESSION_KEY) ??
+        sessionStorage.getItem(LEGACY_SESSION_KEY) ??
+        localStorage.getItem(LEGACY_SESSION_KEY);
       if (saved) {
         try {
           const parsed: unknown = JSON.parse(saved);
           if (isSessionData(parsed)) {
+            const storage = parsed.role === "host" ? localStorage : sessionStorage;
+            storage.setItem(SESSION_KEY, saved);
+            localStorage.removeItem(LEGACY_SESSION_KEY);
+            sessionStorage.removeItem(LEGACY_SESSION_KEY);
             setSession(parsed);
             setCode(parsed.code);
             setView(parsed.role === "host" ? VIEW.HOST : VIEW.PARTICIPANT);
             return;
           }
         } catch {
-          sessionStorage.removeItem("pareo-session");
+          localStorage.removeItem(SESSION_KEY);
+          sessionStorage.removeItem(SESSION_KEY);
+          localStorage.removeItem(LEGACY_SESSION_KEY);
+          sessionStorage.removeItem(LEGACY_SESSION_KEY);
         }
       }
       if (roomFromUrl) {
@@ -235,7 +269,7 @@ export default function Home() {
         {
           name: "prepare_room_creation",
           title: "Preparar una sala",
-          description: "Abre el formulario para configurar un nuevo sorteo de Pareo.",
+          description: "Abre el formulario para configurar un nuevo sorteo de Emparejao.",
           inputSchema: { type: "object", properties: {}, additionalProperties: false },
           annotations: { readOnlyHint: false, untrustedContentHint: false },
           execute: () => {
@@ -262,7 +296,13 @@ export default function Home() {
   }, [session]);
 
   function leaveSession() {
-    sessionStorage.removeItem("pareo-session");
+    if (session?.role === "host") {
+      localStorage.removeItem(SESSION_KEY);
+      localStorage.removeItem(LEGACY_SESSION_KEY);
+    } else {
+      sessionStorage.removeItem(SESSION_KEY);
+      sessionStorage.removeItem(LEGACY_SESSION_KEY);
+    }
     setSession(null);
     setHostRoom(null);
     setParticipantRoom(null);
@@ -282,7 +322,7 @@ export default function Home() {
         body: JSON.stringify({ expectedParticipants: Number(expected) }),
       });
       const nextSession: SessionData = { role: "host", code: data.code, token: data.hostToken };
-      sessionStorage.setItem("pareo-session", JSON.stringify(nextSession));
+      localStorage.setItem(SESSION_KEY, JSON.stringify(nextSession));
       setCode(data.code);
       setSession(nextSession);
       setView(VIEW.HOST);
@@ -312,7 +352,7 @@ export default function Home() {
         code: normalizedCode,
         token: data.participantToken,
       };
-      sessionStorage.setItem("pareo-session", JSON.stringify(nextSession));
+      sessionStorage.setItem(SESSION_KEY, JSON.stringify(nextSession));
       setSession(nextSession);
       setView(VIEW.PARTICIPANT);
     } catch (joinError) {
@@ -351,9 +391,40 @@ export default function Home() {
 
   async function copyInvite() {
     if (!session) return;
-    await navigator.clipboard.writeText(`${window.location.origin}/?room=${session.code}`);
-    setCopied(true);
-    window.setTimeout(() => setCopied(false), 1800);
+    try {
+      await copyText(`${window.location.origin}/?room=${session.code}`);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1800);
+    } catch {
+      setError("No pudimos copiar el enlace. Intenta compartirlo directamente.");
+    }
+  }
+
+  async function shareInvite() {
+    if (!session) return;
+    const url = `${window.location.origin}/?room=${session.code}`;
+    if (!navigator.share) {
+      try {
+        await copyText(url);
+        setShared(true);
+        window.setTimeout(() => setShared(false), 1800);
+      } catch {
+        setError("No pudimos compartir ni copiar el enlace en este navegador.");
+      }
+      return;
+    }
+    try {
+      await navigator.share({
+        title: "Emparejao",
+        text: `Únete a mi sala de Emparejao. PIN: ${session.code}`,
+        url,
+      });
+      setShared(true);
+      window.setTimeout(() => setShared(false), 1800);
+    } catch (shareError) {
+      if (shareError instanceof DOMException && shareError.name === "AbortError") return;
+      setError("No pudimos abrir el menú para compartir. Puedes copiar el enlace.");
+    }
   }
 
   const participantCount = hostRoom?.participants.length ?? 0;
@@ -379,8 +450,12 @@ export default function Home() {
             <div className="pin-card">
               <span>PIN de la sala</span>
               <strong>{session.code}</strong>
-              <button type="button" onClick={copyInvite}>{copied ? <Check /> : <Copy />}{copied ? "Enlace copiado" : "Copiar invitación"}</button>
+              <div className="invite-actions">
+                <button type="button" onClick={copyInvite}>{copied ? <Check /> : <Copy />}{copied ? "Enlace copiado" : "Copiar enlace"}</button>
+                <button type="button" onClick={shareInvite}>{shared ? <Check /> : <Share2 />}{shared ? "Enlace listo" : "Compartir enlace"}</button>
+              </div>
             </div>
+            <p className="room-persistence"><Check aria-hidden="true" /> Puedes cerrar esta ventana: la sala seguirá activa por 24 horas y volverá a abrirse en este dispositivo.</p>
             <div className="qr-frame">
               {qrDataUrl ? <Image src={qrDataUrl} width={360} height={360} unoptimized alt={`Código QR para entrar a la sala ${session.code}`} /> : <LoaderCircle className="spin" aria-label="Creando QR" />}
               <p><ScanLine aria-hidden="true" /> Escanea para entrar</p>
@@ -525,7 +600,7 @@ export default function Home() {
           )}
         </div>
       </section>
-      <footer><span>Pareo</span><p>Privado, rápido y sin descargas.</p></footer>
+      <footer><span>Emparejao</span><p>Privado, rápido y sin descargas.</p></footer>
     </main>
   );
 }
