@@ -1,0 +1,19 @@
+{
+  "id": "/",
+  "name": "Emparejao",
+  "short_name": "Emparejao",
+  "description": "Sorteos de parejas en vivo, sin papelitos.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#f7f1e7",
+  "theme_color": "#2759e8",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

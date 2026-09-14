@@ -37,3 +37,26 @@ export const participants = sqliteTable(
     index("participants_room_token_idx").on(table.roomId, table.accessToken),
   ],
 );
+
+export const pushSubscriptions = sqliteTable(
+  "push_subscriptions",
+  {
+    id: text("id").primaryKey(),
+    roomId: text("room_id")
+      .notNull()
+      .references(() => rooms.id, { onDelete: "cascade" }),
+    participantId: text("participant_id")
+      .notNull()
+      .references(() => participants.id, { onDelete: "cascade" }),
+    endpoint: text("endpoint").notNull(),
+    p256dh: text("p256dh").notNull(),
+    auth: text("auth").notNull(),
+    createdAt: integer("created_at").notNull(),
+    updatedAt: integer("updated_at").notNull(),
+  },
+  (table) => [
+    uniqueIndex("push_subscriptions_endpoint_unique").on(table.endpoint),
+    uniqueIndex("push_subscriptions_participant_unique").on(table.participantId),
+    index("push_subscriptions_room_idx").on(table.roomId),
+  ],
+);

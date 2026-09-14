@@ -47,6 +47,7 @@ const NOTIFICATION_CAPABILITY = {
   READY: "ready",
   INSECURE: "insecure",
   UNSUPPORTED: "unsupported",
+  IOS_INSTALL: "ios-install",
 } as const;
 
 type View = (typeof VIEW)[keyof typeof VIEW];
@@ -92,6 +93,16 @@ interface BrowserNotificationMessage {
   url?: string;
 }
 
+interface PushPublicKeyResponse {
+  publicKey: string;
+}
+
+interface PushBatchResponse {
+  attempted: number;
+  delivered: number;
+  next: string | null;
+}
+
 declare global {
   interface Document {
     modelContext?: {
@@ -120,6 +131,19 @@ function isSessionData(value: unknown): value is SessionData {
   );
 }
 
+function isIosWithoutHomeScreen() {
+  const ios = /iPad|iPhone|iPod/.test(navigator.userAgent);
+  const standalone = window.matchMedia("(display-mode: standalone)").matches ||
+    ("standalone" in navigator && navigator.standalone === true);
+  return ios && !standalone;
+}
+
+function decodeApplicationServerKey(value: string) {
+  const padded = value.padEnd(value.length + ((4 - (value.length % 4)) % 4), "=");
+  const decoded = atob(padded.replace(/-/g, "+").replace(/_/g, "/"));
+  return Uint8Array.from(decoded, (character) => character.charCodeAt(0));
+}
+
 async function api<T>(path: string, init?: RequestInit) {
   const response = await fetch(path, init);
   const body = (await response.json()) as T & { error?: string };
@@ -143,6 +167,47 @@ async function copyText(value: string) {
   const copied = document.execCommand("copy");
   field.remove();
   if (!copied) throw new Error("Copy command failed");
+}
+
+async function savePushSubscription(session: SessionData, subscription: PushSubscription) {
+  await api(`/api/rooms/${session.code}/push-subscription`, {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${session.token}`,
+      "content-type": "application/json",
+    },
+    body: JSON.stringify(subscription.toJSON()),
+  });
+}
+
+async function subscribeToPush(session: SessionData) {
+  const { publicKey } = await api<PushPublicKeyResponse>("/api/push/public-key", {
+    cache: "no-store",
+  });
+  const registration = await navigator.serviceWorker.ready;
+  const existing = await registration.pushManager.getSubscription();
+  const subscription = existing ?? await registration.pushManager.subscribe({
+    userVisibleOnly: true,
+    applicationServerKey: decodeApplicationServerKey(publicKey),
+  });
+  await savePushSubscription(session, subscription);
+}
+
+async function notifyParticipants(session: SessionData) {
+  let after = "";
+  for (let batch = 0; batch < 25; batch += 1) {
+    const result = await api<PushBatchResponse>(`/api/rooms/${session.code}/notify`, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${session.token}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ after }),
+    });
+    if (!result.next) return;
+    after = result.next;
+  }
+  throw new Error("No se pudieron completar todos los lotes de avisos.");
 }
 
 async function showBrowserNotification(message: BrowserNotificationMessage) {
@@ -237,10 +302,20 @@ export default function Home() {
     useState<NotificationPermission>("default");
   const [notificationCapability, setNotificationCapability] =
     useState<NotificationCapability>(NOTIFICATION_CAPABILITY.CHECKING);
+  const [pushSubscribed, setPushSubscribed] = useState(false);
+  const [pushRefreshSignal, setPushRefreshSignal] = useState(0);
 
   useEffect(() => {
     const permissionTimer = window.setTimeout(() => {
-      if (!("Notification" in window) || !("serviceWorker" in navigator)) {
+      if (isIosWithoutHomeScreen()) {
+        setNotificationCapability(NOTIFICATION_CAPABILITY.IOS_INSTALL);
+        return;
+      }
+      if (
+        !("Notification" in window) ||
+        !("serviceWorker" in navigator) ||
+        !("PushManager" in window)
+      ) {
         setNotificationCapability(NOTIFICATION_CAPABILITY.UNSUPPORTED);
         return;
       }
@@ -256,6 +331,40 @@ export default function Home() {
     }
     return () => window.clearTimeout(permissionTimer);
   }, []);
+
+  useEffect(() => {
+    if (!("serviceWorker" in navigator) || !session || session.role !== "participant") return;
+    const onPushMessage = (event: MessageEvent<unknown>) => {
+      if (!event.data || typeof event.data !== "object") return;
+      const message = event.data as Record<string, unknown>;
+      if (message.type === "DRAW_STARTED" && message.roomCode === session.code) {
+        setPushRefreshSignal((value) => value + 1);
+      }
+    };
+    navigator.serviceWorker.addEventListener("message", onPushMessage);
+    return () => navigator.serviceWorker.removeEventListener("message", onPushMessage);
+  }, [session]);
+
+  useEffect(() => {
+    if (
+      notificationCapability !== NOTIFICATION_CAPABILITY.READY ||
+      notificationPermission !== "granted" ||
+      !session ||
+      session.role !== "participant"
+    ) return;
+    let active = true;
+    void navigator.serviceWorker.ready
+      .then((registration) => registration.pushManager.getSubscription())
+      .then(async (subscription) => {
+        if (!subscription) return;
+        await savePushSubscription(session, subscription);
+        if (active) setPushSubscribed(true);
+      })
+      .catch(() => undefined);
+    return () => {
+      active = false;
+    };
+  }, [notificationCapability, notificationPermission, session]);
 
   useEffect(() => {
     const restoreTimer = window.setTimeout(() => {
@@ -297,7 +406,7 @@ export default function Home() {
     if (!session) return;
     let active = true;
     let timer: ReturnType<typeof setTimeout> | undefined;
-    let previousStatus = "";
+    let previousStatus = session.role === "participant" ? "lobby" : "";
 
     async function refresh() {
       try {
@@ -323,7 +432,10 @@ export default function Home() {
         if (!active) return;
         setError(refreshError instanceof Error ? refreshError.message : "Conexión interrumpida.");
       } finally {
-        if (active) timer = setTimeout(refresh, document.hidden ? 5000 : 1800);
+        if (active) {
+          const delay = session.role === "host" ? 1800 : document.hidden ? 45000 : 20000;
+          timer = setTimeout(refresh, delay);
+        }
       }
     }
 
@@ -332,7 +444,7 @@ export default function Home() {
       active = false;
       if (timer) clearTimeout(timer);
     };
-  }, [session]);
+  }, [session, pushRefreshSignal]);
 
   useEffect(() => {
     const context = document.modelContext;
@@ -454,6 +566,11 @@ export default function Home() {
         cache: "no-store",
       });
       setHostRoom(updatedRoom);
+      try {
+        await notifyParticipants(session);
+      } catch {
+        setError("El sorteo se completó, pero algunos avisos push podrían no haberse enviado.");
+      }
     } catch (startError) {
       setError(startError instanceof Error ? startError.message : "No pudimos iniciar el sorteo.");
     } finally {
@@ -500,7 +617,7 @@ export default function Home() {
   }
 
   async function enableNotifications() {
-    if (!("Notification" in window)) {
+    if (!("Notification" in window) || !session || session.role !== "participant") {
       setError("Este navegador no admite notificaciones.");
       return;
     }
@@ -509,14 +626,25 @@ export default function Home() {
     if (permission === "denied") {
       setError("Las notificaciones están bloqueadas. Puedes activarlas desde los ajustes del navegador.");
     } else if (permission === "granted") {
-      setError("");
-      const displayed = await showBrowserNotification({
-        title: "Notificaciones activadas",
-        body: "Te avisaremos cuando comience el sorteo.",
-        tag: "emparejao-notifications-ready",
-      });
-      if (!displayed) {
-        setError("El permiso fue aceptado, pero este navegador no pudo mostrar el aviso de prueba.");
+      try {
+        await subscribeToPush(session);
+        setPushSubscribed(true);
+        setError("");
+        const displayed = await showBrowserNotification({
+          title: "Notificaciones activadas",
+          body: "Te avisaremos aunque cierres Emparejao.",
+          tag: "emparejao-notifications-ready",
+        });
+        if (!displayed) {
+          setError("La suscripción quedó activa, pero el aviso de prueba no pudo mostrarse.");
+        }
+      } catch (subscriptionError) {
+        setPushSubscribed(false);
+        setError(
+          subscriptionError instanceof Error
+            ? subscriptionError.message
+            : "No pudimos completar la suscripción push.",
+        );
       }
     }
   }
@@ -704,12 +832,17 @@ export default function Home() {
                   <Bell /> <span><strong>Avisos no disponibles aquí</strong>Abre el enlace en Chrome, Safari, Firefox o Edge.</span>
                 </div>
               )}
-              {notificationCapability === NOTIFICATION_CAPABILITY.READY && notificationPermission === "granted" && (
-                <div className="notification-enabled"><BellRing /> Te avisaremos cuando empiece <button type="button" onClick={testNotification}>Probar aviso</button></div>
+              {notificationCapability === NOTIFICATION_CAPABILITY.IOS_INSTALL && (
+                <div className="notification-help" role="status">
+                  <Bell /> <span><strong>En iPhone: añádela a Inicio</strong>Toca Compartir, elige “Añadir a pantalla de inicio”, abre Emparejao desde el icono y activa el aviso allí.</span>
+                </div>
               )}
-              {notificationCapability === NOTIFICATION_CAPABILITY.READY && notificationPermission === "default" && (
+              {notificationCapability === NOTIFICATION_CAPABILITY.READY && notificationPermission === "granted" && pushSubscribed && (
+                <div className="notification-enabled"><BellRing /> Te avisaremos aunque cierres la app <button type="button" onClick={testNotification}>Probar aviso</button></div>
+              )}
+              {notificationCapability === NOTIFICATION_CAPABILITY.READY && (notificationPermission === "default" || (notificationPermission === "granted" && !pushSubscribed)) && (
                 <button className="notification-button" type="button" onClick={enableNotifications}>
-                  <Bell /> Avisarme cuando empiece
+                  <Bell /> {notificationPermission === "granted" ? "Completar avisos" : "Avisarme cuando empiece"}
                 </button>
               )}
               {notificationCapability === NOTIFICATION_CAPABILITY.READY && notificationPermission === "denied" && (

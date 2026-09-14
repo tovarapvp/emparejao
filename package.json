@@ -1,5 +1,5 @@
 {
-  "name": "site-creator-vinext-starter",
+  "name": "emparejao",
   "version": "0.1.0",
   "private": true,
   "engines": {
@@ -12,10 +12,12 @@
     "start": "node --import ./scripts/sites-env.mjs ./node_modules/wrangler/bin/wrangler.js dev --config dist/server/wrangler.json --local --persist-to .wrangler/state --ip 127.0.0.1 --inspector-port 0",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
     "test:load": "node scripts/load-test.mjs",
+    "push:keys": "node scripts/generate-vapid-keys.mjs",
     "db:generate": "drizzle-kit generate"
   },
   "dependencies": {
     "@base-ui/react": "^1.7.0",
+    "@block65/webcrypto-web-push": "^2.0.0",
     "@hookform/resolvers": "^5.7.1",
     "@shadcn/react": "^0.3.0",
     "@types/qrcode": "^1.5.6",

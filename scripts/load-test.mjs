@@ -1,6 +1,10 @@
-const TEST_PARTICIPANTS = 800;
+const TEST_PARTICIPANTS = Number(process.argv[3] ?? 800);
 const CONCURRENCY = 25;
-const BASE_URL = "http://localhost:5173";
+const BASE_URL = (process.argv[2] ?? "http://localhost:5173").replace(/\/$/, "");
+
+if (!Number.isInteger(TEST_PARTICIPANTS) || TEST_PARTICIPANTS < 2 || TEST_PARTICIPANTS > 800) {
+  throw new Error("La cantidad de prueba debe ser un entero entre 2 y 800.");
+}
 
 async function request(path, init) {
   const response = await fetch(`${BASE_URL}${path}`, init);
