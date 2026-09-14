@@ -406,9 +406,17 @@ export default function Home() {
     if (!session) return;
     let active = true;
     let timer: ReturnType<typeof setTimeout> | undefined;
+    let refreshing = false;
+    let refreshAgain = false;
     let previousStatus = session.role === "participant" ? "lobby" : "";
 
     async function refresh() {
+      if (!active) return;
+      if (refreshing) {
+        refreshAgain = true;
+        return;
+      }
+      refreshing = true;
       try {
         const data = await api<HostRoom | ParticipantRoom>(`/api/rooms/${session?.code}`, {
           headers: { authorization: `Bearer ${session?.token}` },
@@ -432,17 +440,40 @@ export default function Home() {
         if (!active) return;
         setError(refreshError instanceof Error ? refreshError.message : "Conexión interrumpida.");
       } finally {
-        if (active) {
-          const delay = session.role === "host" ? 1800 : document.hidden ? 45000 : 20000;
-          timer = setTimeout(refresh, delay);
+        refreshing = false;
+        if (!active) return;
+        if (refreshAgain) {
+          refreshAgain = false;
+          void refresh();
+          return;
         }
+        const delay = session.role === "host" ? 1800 : document.hidden ? 45000 : 20000;
+        timer = setTimeout(refresh, delay);
       }
     }
 
+    function refreshNow() {
+      if (timer) clearTimeout(timer);
+      timer = undefined;
+      void refresh();
+    }
+
+    function refreshWhenVisible() {
+      if (!document.hidden) refreshNow();
+    }
+
+    document.addEventListener("visibilitychange", refreshWhenVisible);
+    window.addEventListener("pageshow", refreshNow);
+    window.addEventListener("focus", refreshNow);
+    window.addEventListener("online", refreshNow);
     void refresh();
     return () => {
       active = false;
       if (timer) clearTimeout(timer);
+      document.removeEventListener("visibilitychange", refreshWhenVisible);
+      window.removeEventListener("pageshow", refreshNow);
+      window.removeEventListener("focus", refreshNow);
+      window.removeEventListener("online", refreshNow);
     };
   }, [session, pushRefreshSignal]);
 
