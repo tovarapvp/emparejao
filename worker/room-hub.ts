@@ -49,6 +49,9 @@ function isBroadcastRequest(value: unknown): value is BroadcastRequest {
 }
 
 export class RoomHub extends DurableObject<Cloudflare.Env> {
+  private pendingParticipantCount: number | null = null;
+  private roomUpdateTimer: ReturnType<typeof setTimeout> | undefined;
+
   async fetch(request: Request) {
     const url = new URL(request.url);
     if (url.pathname === "/broadcast" && request.method === "POST") {
@@ -117,10 +120,36 @@ export class RoomHub extends DurableObject<Cloudflare.Env> {
       return new Response("Evento inválido.", { status: 400 });
     }
 
-    const sockets = body.target === ROOM_EVENT_TARGET.ALL
+    if (body.event.type === "room_updated") {
+      this.pendingParticipantCount = Math.max(
+        this.pendingParticipantCount ?? 0,
+        body.event.participantCount,
+      );
+      if (!this.roomUpdateTimer) {
+        this.roomUpdateTimer = setTimeout(() => {
+          const participantCount = this.pendingParticipantCount;
+          this.pendingParticipantCount = null;
+          this.roomUpdateTimer = undefined;
+          if (participantCount !== null) {
+            this.sendToSockets(
+              { type: "room_updated", participantCount },
+              ROOM_EVENT_TARGET.ALL,
+            );
+          }
+        }, 500);
+      }
+      return Response.json({ queued: true });
+    }
+
+    const delivered = this.sendToSockets(body.event, body.target);
+    return Response.json({ delivered });
+  }
+
+  private sendToSockets(event: RoomEvent, target: RoomEventTarget) {
+    const sockets = target === ROOM_EVENT_TARGET.ALL
       ? this.ctx.getWebSockets()
-      : this.ctx.getWebSockets(body.target);
-    const payload = JSON.stringify(body.event);
+      : this.ctx.getWebSockets(target);
+    const payload = JSON.stringify(event);
     for (const socket of sockets) {
       try {
         socket.send(payload);
@@ -128,7 +157,7 @@ export class RoomHub extends DurableObject<Cloudflare.Env> {
         socket.close(1011, "No se pudo entregar el evento.");
       }
     }
-    return Response.json({ delivered: sockets.length });
+    return sockets.length;
   }
 
   webSocketMessage(socket: WebSocket, message: ArrayBuffer | string) {

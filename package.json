@@ -13,6 +13,7 @@
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
     "test:load": "node scripts/load-test.mjs",
     "test:socket": "node scripts/socket-test.mjs",
+    "test:socket-load": "node scripts/socket-load-test.mjs",
     "push:keys": "node scripts/generate-vapid-keys.mjs",
     "db:generate": "drizzle-kit generate"
   },

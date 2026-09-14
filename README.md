@@ -120,6 +120,12 @@ npm run test:socket
 
 La prueba abre sockets autenticados de organizador y participante y comprueba el contador y el aviso de inicio del sorteo.
 
+La prueba sostenida abre todos los sockets y verifica que cada teléfono simulado reciba el sorteo:
+
+```bash
+npm run test:socket-load -- https://tu-worker.workers.dev 800
+```
+
 ## Seguridad y privacidad
 
 - Los tokens del organizador y los participantes deben tratarse como credenciales privadas.
