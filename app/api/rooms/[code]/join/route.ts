@@ -5,6 +5,7 @@ import {
   type RoomRecord,
   roomError,
 } from "@/lib/room-api";
+import { publishRoomEvent } from "@/lib/room-events";
 
 interface RouteContext {
   params: Promise<{ code: string }>;
@@ -76,6 +77,15 @@ export async function POST(request: Request, context: RouteContext) {
         { status: 409 },
       );
     }
+
+    const updatedRoom = await database
+      .prepare("SELECT version FROM rooms WHERE id = ? LIMIT 1")
+      .bind(room.id)
+      .first<{ version: number }>();
+    await publishRoomEvent(code, {
+      type: "room_updated",
+      participantCount: Math.max(0, (updatedRoom?.version ?? room.version + 1) - 1),
+    });
 
     return Response.json({ code, participantToken, name }, { status: 201 });
   } catch (error) {

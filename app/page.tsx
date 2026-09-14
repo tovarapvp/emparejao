@@ -162,7 +162,7 @@ async function copyText(value: string) {
   field.setAttribute("readonly", "");
   field.style.position = "fixed";
   field.style.opacity = "0";
-  document.body.append(field);
+  document.body.appendChild(field);
   field.select();
   const copied = document.execCommand("copy");
   field.remove();
@@ -303,7 +303,8 @@ export default function Home() {
   const [notificationCapability, setNotificationCapability] =
     useState<NotificationCapability>(NOTIFICATION_CAPABILITY.CHECKING);
   const [pushSubscribed, setPushSubscribed] = useState(false);
-  const [pushRefreshSignal, setPushRefreshSignal] = useState(0);
+  const [roomRefreshSignal, setRoomRefreshSignal] = useState(0);
+  const [socketConnected, setSocketConnected] = useState(false);
 
   useEffect(() => {
     const permissionTimer = window.setTimeout(() => {
@@ -338,7 +339,7 @@ export default function Home() {
       if (!event.data || typeof event.data !== "object") return;
       const message = event.data as Record<string, unknown>;
       if (message.type === "DRAW_STARTED" && message.roomCode === session.code) {
-        setPushRefreshSignal((value) => value + 1);
+        setRoomRefreshSignal((value) => value + 1);
       }
     };
     navigator.serviceWorker.addEventListener("message", onPushMessage);
@@ -404,11 +405,94 @@ export default function Home() {
 
   useEffect(() => {
     if (!session) return;
+    const activeSession = session;
+    let active = true;
+    let socket: WebSocket | null = null;
+    let retryTimer: ReturnType<typeof setTimeout> | undefined;
+    let retryAttempt = 0;
+
+    function scheduleReconnect() {
+      if (!active || document.hidden || retryTimer) return;
+      const delay = Math.min(15_000, 1_000 * 2 ** retryAttempt);
+      retryAttempt += 1;
+      retryTimer = setTimeout(() => {
+        retryTimer = undefined;
+        openSocket();
+      }, delay);
+    }
+
+    function openSocket() {
+      if (!active || document.hidden) return;
+      if (socket?.readyState === WebSocket.OPEN || socket?.readyState === WebSocket.CONNECTING) {
+        return;
+      }
+
+      const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+      socket = new WebSocket(
+        `${protocol}//${window.location.host}/api/rooms/${activeSession.code}/socket`,
+        ["emparejao", activeSession.token],
+      );
+      socket.addEventListener("open", () => {
+        if (!active) return;
+        retryAttempt = 0;
+        setSocketConnected(true);
+      });
+      socket.addEventListener("message", (event) => {
+        if (!active || typeof event.data !== "string") return;
+        try {
+          const message = JSON.parse(event.data) as Record<string, unknown>;
+          if (
+            (message.type === "room_snapshot" || message.type === "room_updated") &&
+            activeSession.role === "participant" &&
+            typeof message.participantCount === "number"
+          ) {
+            setParticipantRoom((current) => current
+              ? { ...current, participantCount: message.participantCount as number }
+              : current);
+          }
+          if (message.type === "room_updated" && activeSession.role === "host") {
+            setRoomRefreshSignal((value) => value + 1);
+          }
+          if (message.type === "draw_started" && activeSession.role === "participant") {
+            setRoomRefreshSignal((value) => value + 1);
+          }
+        } catch {
+          // Ignore malformed socket messages and keep the fallback polling active.
+        }
+      });
+      socket.addEventListener("close", () => {
+        if (!active) return;
+        setSocketConnected(false);
+        scheduleReconnect();
+      });
+      socket.addEventListener("error", () => socket?.close());
+    }
+
+    function reconnectWhenAvailable() {
+      if (!document.hidden) openSocket();
+    }
+
+    document.addEventListener("visibilitychange", reconnectWhenAvailable);
+    window.addEventListener("online", reconnectWhenAvailable);
+    openSocket();
+    return () => {
+      active = false;
+      if (retryTimer) clearTimeout(retryTimer);
+      document.removeEventListener("visibilitychange", reconnectWhenAvailable);
+      window.removeEventListener("online", reconnectWhenAvailable);
+      socket?.close(1000, "Vista cerrada");
+      setSocketConnected(false);
+    };
+  }, [session]);
+
+  useEffect(() => {
+    if (!session) return;
+    const activeSession = session;
     let active = true;
     let timer: ReturnType<typeof setTimeout> | undefined;
     let refreshing = false;
     let refreshAgain = false;
-    let previousStatus = session.role === "participant" ? "lobby" : "";
+    let previousStatus = activeSession.role === "participant" ? "lobby" : "";
 
     async function refresh() {
       if (!active) return;
@@ -418,20 +502,20 @@ export default function Home() {
       }
       refreshing = true;
       try {
-        const data = await api<HostRoom | ParticipantRoom>(`/api/rooms/${session?.code}`, {
-          headers: { authorization: `Bearer ${session?.token}` },
+        const data = await api<HostRoom | ParticipantRoom>(`/api/rooms/${activeSession.code}`, {
+          headers: { authorization: `Bearer ${activeSession.token}` },
           cache: "no-store",
         });
         if (!active) return;
         setError("");
-        if (session?.role === "host") {
+        if (activeSession.role === "host") {
           setHostRoom(data as HostRoom);
         } else {
           const participantData = data as ParticipantRoom;
           if (participantData.status === "drawn" && previousStatus === "lobby") {
             setRevealing(true);
             window.setTimeout(() => setRevealing(false), 1800);
-            if (document.hidden) void showDrawNotification(session.code);
+            if (document.hidden) void showDrawNotification(activeSession.code);
           }
           previousStatus = participantData.status;
           setParticipantRoom(participantData);
@@ -447,7 +531,13 @@ export default function Home() {
           void refresh();
           return;
         }
-        const delay = session.role === "host" ? 1800 : document.hidden ? 45000 : 20000;
+        const delay = socketConnected
+          ? 120_000
+          : activeSession.role === "host"
+            ? 1800
+            : document.hidden
+              ? 45000
+              : 20000;
         timer = setTimeout(refresh, delay);
       }
     }
@@ -475,7 +565,7 @@ export default function Home() {
       window.removeEventListener("focus", refreshNow);
       window.removeEventListener("online", refreshNow);
     };
-  }, [session, pushRefreshSignal]);
+  }, [session, roomRefreshSignal, socketConnected]);
 
   useEffect(() => {
     const context = document.modelContext;

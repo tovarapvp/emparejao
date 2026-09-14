@@ -7,6 +7,7 @@ import {
   type RoomRecord,
   roomError,
 } from "@/lib/room-api";
+import { publishRoomEvent } from "@/lib/room-events";
 
 interface RouteContext {
   params: Promise<{ code: string }>;
@@ -53,16 +54,17 @@ export async function POST(request: Request, context: RouteContext) {
     if ((claim.meta.changes ?? 0) === 0) {
       return Response.json({ error: "El sorteo ya está en proceso." }, { status: 409 });
     }
+    const roomId = room.id;
 
     const roster = await database
       .prepare("SELECT id, name, joined_at FROM participants WHERE room_id = ? ORDER BY joined_at, id")
-      .bind(room.id)
+      .bind(roomId)
       .all<Pick<ParticipantRecord, "id" | "name" | "joined_at">>();
 
     async function reopenLobby(message: string) {
       await database
         .prepare("UPDATE rooms SET status = 'lobby' WHERE id = ? AND status = 'drawing'")
-        .bind(room.id)
+        .bind(roomId)
         .run();
       return Response.json({ error: message }, { status: 409 });
     }
@@ -142,6 +144,7 @@ export async function POST(request: Request, context: RouteContext) {
     const hostAssignment = hostParticipantId
       ? assignments.find((assignment) => assignment.participantId === hostParticipantId)
       : undefined;
+    await publishRoomEvent(code, { type: "draw_started" }, "participant");
     return Response.json({
       status: "drawn",
       participantCount: assignments.length,

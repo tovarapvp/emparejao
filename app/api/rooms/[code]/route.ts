@@ -80,18 +80,16 @@ export async function GET(request: Request, context: RouteContext) {
       return Response.json({ error: "Tu acceso a la sala no es válido." }, { status: 401 });
     }
 
-    const count = await database
-      .prepare("SELECT COUNT(*) AS total FROM participants WHERE room_id = ?")
-      .bind(room.id)
-      .first<{ total: number }>();
-
     return Response.json({
       role: "participant",
       code: room.code,
       name: participant.name,
       status: room.status === "drawn" ? "drawn" : "lobby",
       expectedParticipants: room.expected_participants,
-      participantCount: count?.total ?? 0,
+      participantCount:
+        room.status === "drawn"
+          ? room.expected_participants
+          : Math.max(0, room.version - 1),
       version: room.version,
       result:
         room.status === "drawn" && participant.red_number && participant.blue_number

@@ -5,6 +5,7 @@ Sorteos de parejas en vivo para eventos. El organizador crea una sala, define un
 ## Funciones
 
 - Salas persistentes durante 24 horas en Cloudflare D1.
+- Sincronización instantánea con Durable Objects y WebSockets hibernables.
 - Cupo definido por el organizador, con máximo visible de 800 personas.
 - Invitación mediante PIN, enlace compartible y código QR.
 - Sorteo criptográficamente aleatorio ejecutado en el servidor.
@@ -19,6 +20,7 @@ Sorteos de parejas en vivo para eventos. El organizador crea una sala, define un
 
 - Next.js/Vinext, React 19 y TypeScript.
 - Cloudflare Workers para la aplicación y las API.
+- Un Durable Object por sala para mantener las conexiones WebSocket.
 - Cloudflare D1 con Drizzle ORM.
 - Web Push estándar con VAPID.
 - Tailwind CSS 4.
@@ -79,13 +81,13 @@ Nunca publiques `.dev.vars` ni la clave privada. El `.gitignore` ya las excluye.
 - iPhone/iPad: requiere iOS/iPadOS 16.4 o posterior. Primero se debe usar **Compartir → Añadir a pantalla de inicio**, abrir Emparejao desde ese icono y entonces activar las notificaciones.
 - Producción: siempre necesita HTTPS.
 
-El envío se divide en lotes de 40 para respetar el máximo de subpeticiones del plan gratuito de Cloudflare Workers. El polling del participante queda como respaldo de menor frecuencia si el proveedor push demora o falla.
+El envío se divide en lotes de 40 para respetar el máximo de subpeticiones del plan gratuito de Cloudflare Workers. Web Push avisa cuando la aplicación está cerrada; con la aplicación abierta, el Durable Object de la sala entrega los eventos en vivo.
 
 ## Infraestructura sin costo inicial
 
 El proyecto está pensado para comenzar con Cloudflare Workers Free + D1 Free. No significa capacidad ilimitada: el plan gratuito tiene límites diarios de solicitudes y operaciones. Un evento corto de hasta 800 personas puede caber dentro del nivel gratuito, pero se deben revisar las métricas antes de operar múltiples eventos grandes el mismo día.
 
-Para una escala sostenida, el siguiente paso recomendado es reemplazar el polling restante por Durable Objects con WebSockets e hibernación, también disponibles con límites en el plan gratuito.
+El polling de baja frecuencia queda únicamente como recuperación ante pérdida del socket. El contador de participantes utiliza la versión incremental de la sala, evitando ejecutar `COUNT(*)` en cada teléfono.
 
 ### Despliegue con Cloudflare Workers Builds
 
@@ -94,6 +96,7 @@ Para una escala sostenida, el siguiente paso recomendado es reemplazar el pollin
 3. En el Worker conectado a GitHub abre **Settings → Build → Build Variables and Secrets** y agrega `CLOUDFLARE_D1_DATABASE_ID` con ese UUID.
 4. Opcionalmente agrega `CLOUDFLARE_D1_DATABASE_NAME=emparejao-db`.
 5. Usa `npm run build` como comando de build y `npx wrangler deploy --config dist/server/wrangler.json` como comando de deploy.
+   El primer despliegue crea automáticamente la clase SQLite `RoomHub` y su binding `ROOM_HUB`.
 6. Antes de usar la aplicación, ejecuta en la consola SQL de D1 los archivos `drizzle/0000_stormy_pet_avengers.sql` y `drizzle/0001_great_mystique.sql`, en ese orden.
 7. Después del primer despliegue configura `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY` y `VAPID_SUBJECT` en **Settings → Variables and Secrets**. Guarda las tres como secretos para que Wrangler no las reemplace.
 
@@ -108,6 +111,14 @@ npm run test:load -- http://localhost:5173 800
 ```
 
 Esta prueba valida altas y sorteos a nivel de API. Antes de un evento real se recomienda además una prueba prolongada con navegadores o conexiones simuladas y medición de latencias p95/p99.
+
+Para validar localmente el canal en vivo después de iniciar el Worker con `npm run start`:
+
+```bash
+npm run test:socket
+```
+
+La prueba abre sockets autenticados de organizador y participante y comprueba el contador y el aviso de inicio del sorteo.
 
 ## Seguridad y privacidad
 
