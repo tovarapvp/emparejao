@@ -425,8 +425,12 @@ export default function Home() {
             <form onSubmit={createRoom}>
               <button type="button" className="back-button" onClick={() => setView(VIEW.HOME)}><ArrowLeft /> Volver</button>
               <div className="action-heading"><h2>Crea tu sala</h2><p>Tú decides el cupo exacto. Debe ser un número par.</p></div>
-              <label className="field-label" htmlFor="expected">Cantidad de participantes</label>
+              <div className="field-label-row">
+                <label className="field-label" htmlFor="expected">Cantidad de participantes</label>
+                <span>Máximo 800</span>
+              </div>
               <div className="number-field"><Input id="expected" inputMode="numeric" min="2" max="800" step="2" value={expected} onChange={(event) => setExpected(event.target.value.replace(/\D/g, "").slice(0, 3))} /><span>personas</span></div>
+              <p className="field-help">Elige cualquier número par entre 2 y 800.</p>
               {error && <p className="form-error" role="alert">{error}</p>}
               <Button className="form-submit" size="lg" disabled={busy}>{busy ? <LoaderCircle className="spin" /> : <Sparkles />} Crear sala</Button>
             </form>

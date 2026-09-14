@@ -276,6 +276,10 @@ button { cursor: pointer; }
 .quiet-link:hover, .back-button:hover { color: #151515; }
 
 .field-label { display: block; font-size: .88rem; font-weight: 750; margin: 20px 0 8px; }
+.field-label-row { align-items: flex-end; display: flex; justify-content: space-between; }
+.field-label-row .field-label { margin-bottom: 8px; }
+.field-label-row > span { color: #2759e8; font-size: .78rem; font-weight: 800; margin-bottom: 8px; }
+.field-help { color: #716b62; font-size: .78rem; margin: 8px 0 0; }
 .action-card input {
   background: #fff;
   border: 1px solid #cfc6b7;

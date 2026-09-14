@@ -21,7 +21,7 @@ export async function POST(request: Request) {
       expectedParticipants % 2 !== 0
     ) {
       return Response.json(
-        { error: "Elige una cantidad par válida para la sala." },
+        { error: "Elige una cantidad par entre 2 y 800." },
         { status: 400 },
       );
     }
