@@ -2,6 +2,7 @@
 
 import {
   ArrowLeft,
+  AtSign,
   Check,
   Copy,
   Crown,
@@ -112,6 +113,24 @@ function Brand() {
       <span className="brand-mark"><Ticket aria-hidden="true" /></span>
       <span>Pareo</span>
     </div>
+  );
+}
+
+function SupportCta() {
+  return (
+    <a
+      className="support-cta"
+      href="https://www.instagram.com/pulseroutines/"
+      target="_blank"
+      rel="noreferrer"
+      aria-label="Apoyar a Pulse Routines en Instagram"
+    >
+      <span className="support-copy">
+        <small>¿Te gustó Pareo?</small>
+        <strong>Apoya este emprendimiento maracucho</strong>
+        <em><AtSign aria-hidden="true" /> pulseroutines</em>
+      </span>
+    </a>
   );
 }
 
@@ -352,6 +371,7 @@ export default function Home() {
     return (
       <main className="app-shell host-shell">
         <header className="topbar"><Brand /><button className="quiet-link" onClick={leaveSession}>Salir</button></header>
+        <SupportCta />
         <section className="host-grid">
           <div className="invite-panel">
             <span className="eyebrow"><Crown aria-hidden="true" /> Panel del organizador</span>
@@ -424,6 +444,7 @@ export default function Home() {
     return (
       <main className="app-shell participant-shell">
         <header className="topbar"><Brand /><button className="quiet-link" onClick={leaveSession}>Salir</button></header>
+        <SupportCta />
         <section className="participant-stage">
           {revealing ? (
             <div className="reveal-loader" aria-live="polite"><span><Sparkles /></span><h1>Buscando tu pareja…</h1><p>Mezclando las tarjetas</p></div>
@@ -457,6 +478,7 @@ export default function Home() {
   return (
     <main className="app-shell landing-shell">
       <header className="topbar"><Brand /><span className="capacity-pill"><Crown /> Tú defines el cupo</span></header>
+      <SupportCta />
       <section className="landing-grid">
         <div className="intro-copy">
           <span className="eyebrow"><Sparkles aria-hidden="true" /> Sorteos en vivo, sin papelitos</span>
