@@ -33,12 +33,21 @@ export async function GET(request: Request, context: RouteContext) {
     }
 
     if (token === room.host_token) {
-      const roster = await database
-        .prepare(
-          "SELECT id, name, joined_at FROM participants WHERE room_id = ? ORDER BY joined_at, id",
-        )
-        .bind(room.id)
-        .all<Pick<ParticipantRecord, "id" | "name" | "joined_at">>();
+      const [roster, hostParticipant] = await Promise.all([
+        database
+          .prepare(
+            "SELECT id, name, joined_at FROM participants WHERE room_id = ? ORDER BY joined_at, id",
+          )
+          .bind(room.id)
+          .all<Pick<ParticipantRecord, "id" | "name" | "joined_at">>(),
+        database
+          .prepare(
+            `SELECT red_number, blue_number
+             FROM participants WHERE room_id = ? AND access_token = ? LIMIT 1`,
+          )
+          .bind(room.id, room.host_token)
+          .first<Pick<ParticipantRecord, "red_number" | "blue_number">>(),
+      ]);
 
       return Response.json({
         role: "host",
@@ -47,6 +56,16 @@ export async function GET(request: Request, context: RouteContext) {
         expectedParticipants: room.expected_participants,
         version: room.version,
         participants: roster.results,
+        result:
+          room.status === "drawn" &&
+          hostParticipant?.red_number !== null &&
+          hostParticipant?.red_number !== undefined &&
+          hostParticipant.blue_number !== null
+            ? {
+                redNumber: hostParticipant.red_number,
+                blueNumber: hostParticipant.blue_number,
+              }
+            : null,
       });
     }
 

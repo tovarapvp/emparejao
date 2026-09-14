@@ -3,6 +3,8 @@
 import {
   ArrowLeft,
   AtSign,
+  Bell,
+  BellRing,
   Check,
   Copy,
   Crown,
@@ -59,6 +61,7 @@ interface HostRoom {
   status: "lobby" | "drawn";
   expectedParticipants: number;
   participants: ParticipantSummary[];
+  result: DrawResult | null;
 }
 
 interface DrawResult {
@@ -127,6 +130,28 @@ async function copyText(value: string) {
   if (!copied) throw new Error("Copy command failed");
 }
 
+async function showDrawNotification(roomCode: string) {
+  if (!("Notification" in window) || Notification.permission !== "granted") return;
+
+  const options: NotificationOptions = {
+    body: "Tu tarjeta ya está lista. Vuelve para descubrir tu pareja.",
+    icon: "/favicon.svg",
+    tag: `emparejao-draw-${roomCode}`,
+    data: { url: `/?room=${roomCode}` },
+  };
+
+  try {
+    if ("serviceWorker" in navigator) {
+      const registration = await navigator.serviceWorker.ready;
+      await registration.showNotification("¡El sorteo comenzó!", options);
+      return;
+    }
+    new Notification("¡El sorteo comenzó!", options);
+  } catch {
+    // The in-app reveal remains the fallback if the browser suppresses notifications.
+  }
+}
+
 function Brand() {
   return (
     <div
@@ -183,6 +208,18 @@ export default function Home() {
   const [shared, setShared] = useState(false);
   const [error, setError] = useState("");
   const [revealing, setRevealing] = useState(false);
+  const [notificationPermission, setNotificationPermission] =
+    useState<NotificationPermission>("default");
+
+  useEffect(() => {
+    const permissionTimer = window.setTimeout(() => {
+      if ("Notification" in window) setNotificationPermission(Notification.permission);
+    }, 0);
+    if ("serviceWorker" in navigator) {
+      void navigator.serviceWorker.register("/sw.js").catch(() => undefined);
+    }
+    return () => window.clearTimeout(permissionTimer);
+  }, []);
 
   useEffect(() => {
     const restoreTimer = window.setTimeout(() => {
@@ -241,6 +278,7 @@ export default function Home() {
           if (participantData.status === "drawn" && previousStatus === "lobby") {
             setRevealing(true);
             window.setTimeout(() => setRevealing(false), 1800);
+            if (document.hidden) void showDrawNotification(session.code);
           }
           previousStatus = participantData.status;
           setParticipantRoom(participantData);
@@ -362,7 +400,7 @@ export default function Home() {
     }
   }
 
-  async function startDraw(closeWithPresent = false) {
+  async function startDraw(closeWithPresent = false, includeHost = false) {
     if (!session) return;
     setBusy(true);
     setError("");
@@ -373,15 +411,13 @@ export default function Home() {
           authorization: `Bearer ${session.token}`,
           "content-type": "application/json",
         },
-        body: JSON.stringify({ closeWithPresent }),
+        body: JSON.stringify({ closeWithPresent, includeHost }),
       });
-      setHostRoom((current) => current ? {
-        ...current,
-        status: "drawn",
-        expectedParticipants: closeWithPresent
-          ? current.participants.length
-          : current.expectedParticipants,
-      } : current);
+      const updatedRoom = await api<HostRoom>(`/api/rooms/${session.code}`, {
+        headers: { authorization: `Bearer ${session.token}` },
+        cache: "no-store",
+      });
+      setHostRoom(updatedRoom);
     } catch (startError) {
       setError(startError instanceof Error ? startError.message : "No pudimos iniciar el sorteo.");
     } finally {
@@ -424,6 +460,20 @@ export default function Home() {
     } catch (shareError) {
       if (shareError instanceof DOMException && shareError.name === "AbortError") return;
       setError("No pudimos abrir el menú para compartir. Puedes copiar el enlace.");
+    }
+  }
+
+  async function enableNotifications() {
+    if (!("Notification" in window)) {
+      setError("Este navegador no admite notificaciones.");
+      return;
+    }
+    const permission = await Notification.requestPermission();
+    setNotificationPermission(permission);
+    if (permission === "denied") {
+      setError("Las notificaciones están bloqueadas. Puedes activarlas desde los ajustes del navegador.");
+    } else if (permission === "granted") {
+      setError("");
     }
   }
 
@@ -488,6 +538,15 @@ export default function Home() {
               <p className="muted">Los nombres aparecerán aquí cuando entren.</p>
             </div>
             <RoomCounter current={participantCount} total={hostRoom?.expectedParticipants ?? Number(expected)} />
+            {hostRoom?.result && (
+              <div className="host-result-card">
+                <p>Tu tarjeta de comodín</p>
+                <div>
+                  <span><small>ROJO</small><strong>{hostRoom.result.redNumber}</strong></span>
+                  <span><small>AZUL</small><strong>{hostRoom.result.blueNumber}</strong></span>
+                </div>
+              </div>
+            )}
             <div className="roster" aria-live="polite">
               {hostRoom?.participants.map((participant, index) => (
                 <div className="person" key={participant.id}>
@@ -525,7 +584,28 @@ export default function Home() {
               </AlertDialog>
             )}
             {!roomFull && hasOddGroup && hostRoom?.status === "lobby" && (
-              <p className="lobby-hint">Ahora hay un número impar. Espera 1 persona más para poder cerrar el cupo.</p>
+              <>
+                <p className="lobby-hint">Hay un número impar. Puedes esperar 1 persona más o entrar tú como comodín.</p>
+                <AlertDialog>
+                  <AlertDialogTrigger asChild>
+                    <Button className="host-wildcard" variant="outline" disabled={busy}>
+                      Sumarme como comodín
+                    </Button>
+                  </AlertDialogTrigger>
+                  <AlertDialogContent className="close-dialog">
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>¿Entrar al sorteo como comodín?</AlertDialogTitle>
+                      <AlertDialogDescription>
+                        Serán {participantCount + 1} personas. El cupo se cerrará y tu tarjeta aparecerá en el panel del organizador.
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel>Seguir esperando</AlertDialogCancel>
+                      <AlertDialogAction onClick={() => startDraw(true, true)}>Sumarme y sortear</AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
+              </>
             )}
           </div>
         </section>
@@ -561,6 +641,13 @@ export default function Home() {
               <p>Tu tarjeta aparecerá aquí cuando el organizador inicie el sorteo.</p>
               <RoomCounter current={participantRoom?.participantCount ?? 0} total={participantRoom?.expectedParticipants ?? 0} />
               <div className="room-chip">Sala <strong>{session.code}</strong></div>
+              {notificationPermission === "granted" ? (
+                <div className="notification-enabled"><BellRing /> Te avisaremos cuando empiece</div>
+              ) : (
+                <button className="notification-button" type="button" onClick={enableNotifications}>
+                  <Bell /> Avisarme cuando empiece
+                </button>
+              )}
               {error && <p className="form-error" role="alert">{error}</p>}
             </div>
           )}

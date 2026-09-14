@@ -101,12 +101,13 @@ const oddRoom = await request("/api/rooms", {
   body: JSON.stringify({ expectedParticipants: 8 }),
 });
 
+const oddParticipants = [];
 for (let number = 1; number <= 5; number += 1) {
-  await request(`/api/rooms/${oddRoom.code}/join`, {
+  oddParticipants.push(await request(`/api/rooms/${oddRoom.code}/join`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ name: `Grupo impar ${number}` }),
-  });
+  }));
 }
 
 const oddAttempt = await fetch(`${BASE_URL}/api/rooms/${oddRoom.code}/start`, {
@@ -129,3 +130,45 @@ if (oddStatus.status !== "lobby") {
 }
 
 console.log("OK: grupo impar bloqueado y devuelto al lobby.");
+
+await request(`/api/rooms/${oddRoom.code}/start`, {
+  method: "POST",
+  headers: {
+    authorization: `Bearer ${oddRoom.hostToken}`,
+    "content-type": "application/json",
+  },
+  body: JSON.stringify({ closeWithPresent: true, includeHost: true }),
+});
+
+const wildcardHostStatus = await request(`/api/rooms/${oddRoom.code}`, {
+  headers: { authorization: `Bearer ${oddRoom.hostToken}` },
+});
+if (
+  wildcardHostStatus.status !== "drawn" ||
+  wildcardHostStatus.expectedParticipants !== 6 ||
+  wildcardHostStatus.participants.length !== 6 ||
+  !wildcardHostStatus.result
+) {
+  throw new Error("El organizador comodín no cerró correctamente el grupo impar.");
+}
+
+const wildcardResults = await Promise.all(
+  oddParticipants.map((participant) =>
+    request(`/api/rooms/${oddRoom.code}`, {
+      headers: { authorization: `Bearer ${participant.participantToken}` },
+    }),
+  ),
+);
+const allWildcardResults = [
+  ...wildcardResults.map((item) => item.result),
+  wildcardHostStatus.result,
+];
+const wildcardByRed = new Map(allWildcardResults.map((item) => [item.redNumber, item]));
+for (const item of allWildcardResults) {
+  const partner = wildcardByRed.get(item.blueNumber);
+  if (!partner || partner.blueNumber !== item.redNumber) {
+    throw new Error("El emparejamiento con organizador comodín no es simétrico.");
+  }
+}
+
+console.log("OK: grupo impar resuelto al sumar al organizador como comodín.");

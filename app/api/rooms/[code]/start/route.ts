@@ -15,9 +15,14 @@ interface RouteContext {
 export async function POST(request: Request, context: RouteContext) {
   try {
     let closeWithPresent = false;
+    let includeHost = false;
     try {
-      const payload = (await request.json()) as { closeWithPresent?: unknown };
+      const payload = (await request.json()) as {
+        closeWithPresent?: unknown;
+        includeHost?: unknown;
+      };
       closeWithPresent = payload.closeWithPresent === true;
+      includeHost = payload.includeHost === true;
     } catch {
       // Requests from older clients still start normally when the room is full.
     }
@@ -62,18 +67,48 @@ export async function POST(request: Request, context: RouteContext) {
       return Response.json({ error: message }, { status: 409 });
     }
 
-    if (roster.results.length < 2) {
-      return reopenLobby("Necesitas al menos 2 personas para realizar el sorteo.");
-    }
-    if (roster.results.length % 2 !== 0) {
-      return reopenLobby("El grupo actual es impar. Espera una persona más para formar parejas.");
-    }
-    if (!closeWithPresent && roster.results.length !== room.expected_participants) {
-      return reopenLobby(`Faltan ${room.expected_participants - roster.results.length} personas por entrar.`);
+    let drawingRoster = roster.results;
+    let hostParticipantId: string | null = null;
+
+    if (drawingRoster.length % 2 !== 0) {
+      if (!includeHost) {
+        return reopenLobby("El grupo actual es impar. Espera una persona más o súmate como comodín.");
+      }
+      hostParticipantId = crypto.randomUUID();
+      drawingRoster = [
+        ...drawingRoster,
+        { id: hostParticipantId, name: "Organizador (comodín)", joined_at: Date.now() },
+      ];
+    } else if (includeHost) {
+      return reopenLobby("El organizador solo puede sumarse cuando el grupo es impar.");
     }
 
-    const assignments = createPairAssignments(roster.results);
-    const updates = assignments.map((assignment) =>
+    if (drawingRoster.length < 2) {
+      return reopenLobby("Necesitas al menos 2 personas para realizar el sorteo.");
+    }
+    if (!closeWithPresent && drawingRoster.length !== room.expected_participants) {
+      return reopenLobby(`Faltan ${room.expected_participants - drawingRoster.length} personas por entrar.`);
+    }
+
+    const assignments = createPairAssignments(drawingRoster);
+    const updates = [];
+    if (hostParticipantId) {
+      updates.push(
+        database
+          .prepare(
+            `INSERT INTO participants (id, room_id, name, access_token, joined_at)
+             VALUES (?, ?, ?, ?, ?)`,
+          )
+          .bind(
+            hostParticipantId,
+            room.id,
+            "Organizador (comodín)",
+            room.host_token,
+            Date.now(),
+          ),
+      );
+    }
+    updates.push(...assignments.map((assignment) =>
       database
         .prepare(
           "UPDATE participants SET red_number = ?, blue_number = ? WHERE id = ? AND room_id = ?",
@@ -84,7 +119,7 @@ export async function POST(request: Request, context: RouteContext) {
           assignment.participantId,
           room.id,
         ),
-    );
+    ));
     updates.push(
       database
         .prepare(
@@ -104,7 +139,16 @@ export async function POST(request: Request, context: RouteContext) {
       throw error;
     }
 
-    return Response.json({ status: "drawn", participantCount: assignments.length });
+    const hostAssignment = hostParticipantId
+      ? assignments.find((assignment) => assignment.participantId === hostParticipantId)
+      : undefined;
+    return Response.json({
+      status: "drawn",
+      participantCount: assignments.length,
+      hostResult: hostAssignment
+        ? { redNumber: hostAssignment.redNumber, blueNumber: hostAssignment.blueNumber }
+        : null,
+    });
   } catch (error) {
     return roomError(error);
   }
