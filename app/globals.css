@@ -383,8 +383,14 @@ footer p { color: #716b62; margin: 0; }
 .waiting-card .room-chip { margin-top: 26px; }
 .notification-button { align-items: center; background: #ffdd3e; border: 2px solid #151515; border-radius: 12px; color: #151515; cursor: pointer; display: inline-flex; font-size: .84rem; font-weight: 800; gap: 7px; margin-top: 15px; padding: 11px 15px; }
 .notification-button:hover { background: #ffd21c; transform: translateY(-1px); }
-.notification-button svg, .notification-enabled svg { height: 17px; width: 17px; }
+.notification-button svg, .notification-enabled > svg { height: 17px; width: 17px; }
 .notification-enabled { align-items: center; color: #238b50; display: inline-flex; font-size: .82rem; font-weight: 800; gap: 7px; margin-top: 17px; }
+.notification-enabled button { background: transparent; border: 0; color: #2759e8; cursor: pointer; font: inherit; margin-left: 5px; padding: 3px; text-decoration: underline; }
+.notification-help { align-items: flex-start; background: #eef3ff; border: 1px solid #a8b9ef; border-radius: 12px; color: #304374; display: flex; font-size: .76rem; gap: 9px; line-height: 1.4; margin-top: 15px; padding: 11px 12px; text-align: left; }
+.notification-help.blocked { background: #fff2dc; border-color: #e5b95e; color: #765415; }
+.notification-help > svg { flex: 0 0 auto; height: 17px; margin-top: 2px; width: 17px; }
+.notification-help span, .notification-help strong { display: block; }
+.notification-help strong { font-size: .8rem; margin-bottom: 2px; }
 
 .result-wrap { max-width: 660px; text-align: center; width: 100%; }
 .eyebrow.light { color: #ffdd3e; }

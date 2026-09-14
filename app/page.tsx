@@ -42,8 +42,16 @@ const VIEW = {
 
 const SESSION_KEY = "emparejao-session";
 const LEGACY_SESSION_KEY = "pareo-session";
+const NOTIFICATION_CAPABILITY = {
+  CHECKING: "checking",
+  READY: "ready",
+  INSECURE: "insecure",
+  UNSUPPORTED: "unsupported",
+} as const;
 
 type View = (typeof VIEW)[keyof typeof VIEW];
+type NotificationCapability =
+  (typeof NOTIFICATION_CAPABILITY)[keyof typeof NOTIFICATION_CAPABILITY];
 
 interface SessionData {
   role: "host" | "participant";
@@ -75,6 +83,13 @@ interface ParticipantRoom {
   expectedParticipants: number;
   participantCount: number;
   result: DrawResult | null;
+}
+
+interface BrowserNotificationMessage {
+  title: string;
+  body: string;
+  tag: string;
+  url?: string;
 }
 
 declare global {
@@ -130,26 +145,36 @@ async function copyText(value: string) {
   if (!copied) throw new Error("Copy command failed");
 }
 
-async function showDrawNotification(roomCode: string) {
-  if (!("Notification" in window) || Notification.permission !== "granted") return;
+async function showBrowserNotification(message: BrowserNotificationMessage) {
+  if (!("Notification" in window) || Notification.permission !== "granted") return false;
 
   const options: NotificationOptions = {
-    body: "Tu tarjeta ya está lista. Vuelve para descubrir tu pareja.",
+    body: message.body,
     icon: "/favicon.svg",
-    tag: `emparejao-draw-${roomCode}`,
-    data: { url: `/?room=${roomCode}` },
+    tag: message.tag,
+    data: { url: message.url ?? "/" },
   };
 
   try {
     if ("serviceWorker" in navigator) {
       const registration = await navigator.serviceWorker.ready;
-      await registration.showNotification("¡El sorteo comenzó!", options);
-      return;
+      await registration.showNotification(message.title, options);
+      return true;
     }
-    new Notification("¡El sorteo comenzó!", options);
+    new Notification(message.title, options);
+    return true;
   } catch {
-    // The in-app reveal remains the fallback if the browser suppresses notifications.
+    return false;
   }
+}
+
+function showDrawNotification(roomCode: string) {
+  return showBrowserNotification({
+    title: "¡El sorteo comenzó!",
+    body: "Tu tarjeta ya está lista. Vuelve para descubrir tu pareja.",
+    tag: `emparejao-draw-${roomCode}`,
+    url: `/?room=${roomCode}`,
+  });
 }
 
 function Brand() {
@@ -210,10 +235,21 @@ export default function Home() {
   const [revealing, setRevealing] = useState(false);
   const [notificationPermission, setNotificationPermission] =
     useState<NotificationPermission>("default");
+  const [notificationCapability, setNotificationCapability] =
+    useState<NotificationCapability>(NOTIFICATION_CAPABILITY.CHECKING);
 
   useEffect(() => {
     const permissionTimer = window.setTimeout(() => {
-      if ("Notification" in window) setNotificationPermission(Notification.permission);
+      if (!("Notification" in window) || !("serviceWorker" in navigator)) {
+        setNotificationCapability(NOTIFICATION_CAPABILITY.UNSUPPORTED);
+        return;
+      }
+      if (!window.isSecureContext) {
+        setNotificationCapability(NOTIFICATION_CAPABILITY.INSECURE);
+        return;
+      }
+      setNotificationPermission(Notification.permission);
+      setNotificationCapability(NOTIFICATION_CAPABILITY.READY);
     }, 0);
     if ("serviceWorker" in navigator) {
       void navigator.serviceWorker.register("/sw.js").catch(() => undefined);
@@ -474,7 +510,24 @@ export default function Home() {
       setError("Las notificaciones están bloqueadas. Puedes activarlas desde los ajustes del navegador.");
     } else if (permission === "granted") {
       setError("");
+      const displayed = await showBrowserNotification({
+        title: "Notificaciones activadas",
+        body: "Te avisaremos cuando comience el sorteo.",
+        tag: "emparejao-notifications-ready",
+      });
+      if (!displayed) {
+        setError("El permiso fue aceptado, pero este navegador no pudo mostrar el aviso de prueba.");
+      }
     }
+  }
+
+  async function testNotification() {
+    const displayed = await showBrowserNotification({
+      title: "Emparejao está listo",
+      body: "Este es tu aviso de prueba.",
+      tag: "emparejao-notifications-test",
+    });
+    if (!displayed) setError("El navegador no pudo mostrar la notificación de prueba.");
   }
 
   const participantCount = hostRoom?.participants.length ?? 0;
@@ -641,12 +694,28 @@ export default function Home() {
               <p>Tu tarjeta aparecerá aquí cuando el organizador inicie el sorteo.</p>
               <RoomCounter current={participantRoom?.participantCount ?? 0} total={participantRoom?.expectedParticipants ?? 0} />
               <div className="room-chip">Sala <strong>{session.code}</strong></div>
-              {notificationPermission === "granted" ? (
-                <div className="notification-enabled"><BellRing /> Te avisaremos cuando empiece</div>
-              ) : (
+              {notificationCapability === NOTIFICATION_CAPABILITY.INSECURE && (
+                <div className="notification-help" role="status">
+                  <Bell /> <span><strong>Necesitas una conexión segura</strong>Abre Emparejao con HTTPS o desde localhost para activar avisos.</span>
+                </div>
+              )}
+              {notificationCapability === NOTIFICATION_CAPABILITY.UNSUPPORTED && (
+                <div className="notification-help" role="status">
+                  <Bell /> <span><strong>Avisos no disponibles aquí</strong>Abre el enlace en Chrome, Safari, Firefox o Edge.</span>
+                </div>
+              )}
+              {notificationCapability === NOTIFICATION_CAPABILITY.READY && notificationPermission === "granted" && (
+                <div className="notification-enabled"><BellRing /> Te avisaremos cuando empiece <button type="button" onClick={testNotification}>Probar aviso</button></div>
+              )}
+              {notificationCapability === NOTIFICATION_CAPABILITY.READY && notificationPermission === "default" && (
                 <button className="notification-button" type="button" onClick={enableNotifications}>
                   <Bell /> Avisarme cuando empiece
                 </button>
+              )}
+              {notificationCapability === NOTIFICATION_CAPABILITY.READY && notificationPermission === "denied" && (
+                <div className="notification-help blocked" role="status">
+                  <Bell /> <span><strong>Notificaciones bloqueadas</strong>Permítelas desde los ajustes del sitio en tu navegador y recarga la página.</span>
+                </div>
               )}
               {error && <p className="form-error" role="alert">{error}</p>}
             </div>
