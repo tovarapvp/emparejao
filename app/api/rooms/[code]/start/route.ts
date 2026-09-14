@@ -14,6 +14,14 @@ interface RouteContext {
 
 export async function POST(request: Request, context: RouteContext) {
   try {
+    let closeWithPresent = false;
+    try {
+      const payload = (await request.json()) as { closeWithPresent?: unknown };
+      closeWithPresent = payload.closeWithPresent === true;
+    } catch {
+      // Requests from older clients still start normally when the room is full.
+    }
+
     const { code: rawCode } = await context.params;
     const code = normalizeCode(rawCode);
     const hostToken = bearerToken(request);
@@ -33,24 +41,35 @@ export async function POST(request: Request, context: RouteContext) {
       return Response.json({ error: "Este sorteo ya fue realizado." }, { status: 409 });
     }
 
-    const roster = await database
-      .prepare("SELECT id, name, joined_at FROM participants WHERE room_id = ? ORDER BY joined_at, id")
-      .bind(room.id)
-      .all<Pick<ParticipantRecord, "id" | "name" | "joined_at">>();
-
-    if (roster.results.length !== room.expected_participants) {
-      return Response.json(
-        { error: `Faltan ${room.expected_participants - roster.results.length} personas por entrar.` },
-        { status: 409 },
-      );
-    }
-
     const claim = await database
       .prepare("UPDATE rooms SET status = 'drawing' WHERE id = ? AND status = 'lobby'")
       .bind(room.id)
       .run();
     if ((claim.meta.changes ?? 0) === 0) {
       return Response.json({ error: "El sorteo ya está en proceso." }, { status: 409 });
+    }
+
+    const roster = await database
+      .prepare("SELECT id, name, joined_at FROM participants WHERE room_id = ? ORDER BY joined_at, id")
+      .bind(room.id)
+      .all<Pick<ParticipantRecord, "id" | "name" | "joined_at">>();
+
+    async function reopenLobby(message: string) {
+      await database
+        .prepare("UPDATE rooms SET status = 'lobby' WHERE id = ? AND status = 'drawing'")
+        .bind(room.id)
+        .run();
+      return Response.json({ error: message }, { status: 409 });
+    }
+
+    if (roster.results.length < 2) {
+      return reopenLobby("Necesitas al menos 2 personas para realizar el sorteo.");
+    }
+    if (roster.results.length % 2 !== 0) {
+      return reopenLobby("El grupo actual es impar. Espera una persona más para formar parejas.");
+    }
+    if (!closeWithPresent && roster.results.length !== room.expected_participants) {
+      return reopenLobby(`Faltan ${room.expected_participants - roster.results.length} personas por entrar.`);
     }
 
     const assignments = createPairAssignments(roster.results);
@@ -69,9 +88,11 @@ export async function POST(request: Request, context: RouteContext) {
     updates.push(
       database
         .prepare(
-          "UPDATE rooms SET status = 'drawn', version = version + 1 WHERE id = ? AND status = 'drawing'",
+          `UPDATE rooms
+           SET status = 'drawn', expected_participants = ?, version = version + 1
+           WHERE id = ? AND status = 'drawing'`,
         )
-        .bind(room.id),
+        .bind(assignments.length, room.id),
     );
     try {
       await database.batch(updates);

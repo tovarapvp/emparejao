@@ -294,6 +294,10 @@ button { cursor: pointer; }
 .pin-input { font-size: 1.45rem !important; font-weight: 850; letter-spacing: .18em; }
 .form-submit, .primary-action { background: #151515; border-radius: 13px; color: white; height: 52px; margin-top: 24px; width: 100%; }
 .form-submit:hover, .primary-action:hover { background: #2759e8; }
+.early-close { border: 1px solid #bcb3a5; border-radius: 13px; height: 46px; margin-top: 10px; width: 100%; }
+.early-close:hover { background: #ffdd3e; border-color: #151515; }
+.lobby-hint { color: #716b62; font-size: .8rem; line-height: 1.45; margin: 11px 8px 0; text-align: center; }
+.close-dialog { border: 2px solid #151515; border-radius: 20px; box-shadow: 9px 9px 0 #151515; }
 .form-error { color: #bd2d25; font-size: .86rem; font-weight: 650; margin: 14px 0 0; }
 
 footer {

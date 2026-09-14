@@ -16,6 +16,17 @@ import { useEffect, useState, type FormEvent } from "react";
 import QRCode from "qrcode";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 
 const VIEW = {
   HOME: "home",
@@ -292,16 +303,26 @@ export default function Home() {
     }
   }
 
-  async function startDraw() {
+  async function startDraw(closeWithPresent = false) {
     if (!session) return;
     setBusy(true);
     setError("");
     try {
       await api(`/api/rooms/${session.code}/start`, {
         method: "POST",
-        headers: { authorization: `Bearer ${session.token}` },
+        headers: {
+          authorization: `Bearer ${session.token}`,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({ closeWithPresent }),
       });
-      setHostRoom((current) => current ? { ...current, status: "drawn" } : current);
+      setHostRoom((current) => current ? {
+        ...current,
+        status: "drawn",
+        expectedParticipants: closeWithPresent
+          ? current.participants.length
+          : current.expectedParticipants,
+      } : current);
     } catch (startError) {
       setError(startError instanceof Error ? startError.message : "No pudimos iniciar el sorteo.");
     } finally {
@@ -318,6 +339,14 @@ export default function Home() {
 
   const participantCount = hostRoom?.participants.length ?? 0;
   const roomFull = Boolean(hostRoom && participantCount === hostRoom.expectedParticipants);
+  const canCloseEarly = Boolean(
+    hostRoom &&
+    hostRoom.status === "lobby" &&
+    participantCount >= 2 &&
+    participantCount < hostRoom.expectedParticipants &&
+    participantCount % 2 === 0,
+  );
+  const hasOddGroup = participantCount > 0 && participantCount % 2 !== 0;
 
   if (view === VIEW.HOST && session) {
     return (
@@ -356,10 +385,34 @@ export default function Home() {
               {!participantCount && <div className="empty-roster"><Users /><p>Aún no hay nadie en la sala.</p></div>}
             </div>
             {error && <p className="form-error" role="alert">{error}</p>}
-            <Button className="primary-action" size="lg" disabled={!roomFull || busy || hostRoom?.status === "drawn"} onClick={startDraw}>
+            <Button className="primary-action" size="lg" disabled={!roomFull || busy || hostRoom?.status === "drawn"} onClick={() => startDraw(false)}>
               {busy ? <LoaderCircle className="spin" /> : <Sparkles />}
               {hostRoom?.status === "drawn" ? "Sorteo enviado" : roomFull ? "Iniciar sorteo" : `Faltan ${(hostRoom?.expectedParticipants ?? 0) - participantCount}`}
             </Button>
+            {canCloseEarly && (
+              <AlertDialog>
+                <AlertDialogTrigger asChild>
+                  <Button className="early-close" variant="outline" disabled={busy}>
+                    Cerrar cupo con {participantCount} presentes
+                  </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent className="close-dialog">
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>¿Cerrar el cupo con {participantCount} personas?</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      La sala esperaba {hostRoom?.expectedParticipants}. Se sortearán únicamente las personas presentes y ya no podrá entrar nadie más.
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>Seguir esperando</AlertDialogCancel>
+                    <AlertDialogAction onClick={() => startDraw(true)}>Cerrar y sortear</AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
+            )}
+            {!roomFull && hasOddGroup && hostRoom?.status === "lobby" && (
+              <p className="lobby-hint">Ahora hay un número impar. Espera 1 persona más para poder cerrar el cupo.</p>
+            )}
           </div>
         </section>
       </main>
