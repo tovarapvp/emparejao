@@ -17,11 +17,11 @@ export async function POST(request: Request) {
     if (
       !Number.isInteger(expectedParticipants) ||
       expectedParticipants < 2 ||
-      expectedParticipants > 500 ||
+      expectedParticipants > 800 ||
       expectedParticipants % 2 !== 0
     ) {
       return Response.json(
-        { error: "Elige una cantidad par entre 2 y 500." },
+        { error: "Elige una cantidad par válida para la sala." },
         { status: 400 },
       );
     }

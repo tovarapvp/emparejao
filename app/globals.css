@@ -129,6 +129,7 @@ button { cursor: pointer; }
   gap: 8px;
   padding: 9px 14px;
 }
+.capacity-pill svg { height: 15px; width: 15px; }
 
 .live-dot {
   background: #2bbf6b;
@@ -286,9 +287,6 @@ button { cursor: pointer; }
 .number-field { position: relative; }
 .number-field input { font-size: 1.4rem; font-weight: 800; padding-right: 100px; }
 .number-field span { color: #716b62; position: absolute; right: 15px; top: 15px; }
-.quick-counts { display: flex; gap: 8px; margin-top: 10px; }
-.quick-counts button { background: #efe8da; border: 0; border-radius: 99px; font-size: .8rem; font-weight: 750; padding: 7px 13px; }
-.quick-counts button:hover { background: #ffdd3e; }
 .pin-input { font-size: 1.45rem !important; font-weight: 850; letter-spacing: .18em; }
 .form-submit, .primary-action { background: #151515; border-radius: 13px; color: white; height: 52px; margin-top: 24px; width: 100%; }
 .form-submit:hover, .primary-action:hover { background: #2759e8; }

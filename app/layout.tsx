@@ -3,7 +3,7 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "Pareo — Sorteos de parejas en vivo",
-  description: "Crea una sala, invita hasta 500 personas y revela las parejas al mismo tiempo.",
+  description: "Define el cupo, invita a tu grupo y revela todas las parejas al mismo tiempo.",
   icons: {
     icon: "/favicon.svg",
     shortcut: "/favicon.svg",

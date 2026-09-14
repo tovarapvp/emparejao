@@ -1,4 +1,4 @@
-const TEST_PARTICIPANTS = 500;
+const TEST_PARTICIPANTS = 800;
 const CONCURRENCY = 25;
 const BASE_URL = "http://localhost:5173";
 

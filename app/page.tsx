@@ -403,7 +403,7 @@ export default function Home() {
 
   return (
     <main className="app-shell landing-shell">
-      <header className="topbar"><Brand /><span className="capacity-pill"><span className="live-dot" /> Hasta 500 personas</span></header>
+      <header className="topbar"><Brand /><span className="capacity-pill"><Crown /> Tú defines el cupo</span></header>
       <section className="landing-grid">
         <div className="intro-copy">
           <span className="eyebrow"><Sparkles aria-hidden="true" /> Sorteos en vivo, sin papelitos</span>
@@ -424,10 +424,9 @@ export default function Home() {
           {view === VIEW.CREATE && (
             <form onSubmit={createRoom}>
               <button type="button" className="back-button" onClick={() => setView(VIEW.HOME)}><ArrowLeft /> Volver</button>
-              <div className="action-heading"><h2>Crea tu sala</h2><p>El número debe ser par para formar parejas.</p></div>
-              <label className="field-label" htmlFor="expected">¿Cuántas personas participarán?</label>
-              <div className="number-field"><Input id="expected" inputMode="numeric" min="2" max="500" step="2" value={expected} onChange={(event) => setExpected(event.target.value.replace(/\D/g, "").slice(0, 3))} /><span>personas</span></div>
-              <div className="quick-counts">{[10, 20, 50, 100].map((count) => <button type="button" key={count} onClick={() => setExpected(String(count))}>{count}</button>)}</div>
+              <div className="action-heading"><h2>Crea tu sala</h2><p>Tú decides el cupo exacto. Debe ser un número par.</p></div>
+              <label className="field-label" htmlFor="expected">Cantidad de participantes</label>
+              <div className="number-field"><Input id="expected" inputMode="numeric" min="2" max="800" step="2" value={expected} onChange={(event) => setExpected(event.target.value.replace(/\D/g, "").slice(0, 3))} /><span>personas</span></div>
               {error && <p className="form-error" role="alert">{error}</p>}
               <Button className="form-submit" size="lg" disabled={busy}>{busy ? <LoaderCircle className="spin" /> : <Sparkles />} Crear sala</Button>
             </form>
