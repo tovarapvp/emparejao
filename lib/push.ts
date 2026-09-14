@@ -44,8 +44,10 @@ export async function sendDrawPush(
   const payload = await buildPushPayload(
     {
       data: JSON.stringify({
-        title: "¡El sorteo comenzó!",
-        body: "Tu tarjeta ya está lista. Toca para descubrir tu pareja.",
+        titleEs: "¡El sorteo comenzó!",
+        bodyEs: "Tu tarjeta ya está lista. Toca para descubrir tu pareja.",
+        titleEn: "The draw has started!",
+        bodyEn: "Your card is ready. Tap to discover your match.",
         tag: `emparejao-draw-${roomCode}`,
         url: `/?room=${roomCode}`,
         roomCode,

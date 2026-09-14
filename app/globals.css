@@ -118,6 +118,36 @@ button { cursor: pointer; }
 }
 .brand-mark svg { height: 21px; width: 21px; }
 
+.topbar-actions {
+  align-items: center;
+  display: flex;
+  gap: 13px;
+}
+
+.language-switch {
+  align-items: center;
+  background: #fffdf8;
+  border: 1px solid #d8d0c2;
+  border-radius: 999px;
+  display: inline-flex;
+  padding: 3px;
+}
+.language-switch button {
+  background: transparent;
+  border: 0;
+  border-radius: 999px;
+  color: #716b62;
+  font-size: .72rem;
+  font-weight: 850;
+  min-width: 34px;
+  padding: 6px 8px;
+}
+.language-switch button.active { background: #151515; color: #fff; }
+.language-switch button:focus-visible { outline: 2px solid #2759e8; outline-offset: 2px; }
+.participant-shell .language-switch { background: rgb(255 255 255 / 12%); border-color: rgb(255 255 255 / 35%); }
+.participant-shell .language-switch button { color: rgb(255 255 255 / 72%); }
+.participant-shell .language-switch button.active { background: #ffdd3e; color: #151515; }
+
 .capacity-pill, .room-chip {
   align-items: center;
   background: #fffdf8;
@@ -438,6 +468,9 @@ footer p { color: #716b62; margin: 0; }
 
 @media (max-width: 560px) {
   .topbar { height: 72px; padding: 0 18px; }
+  .topbar-actions { gap: 9px; }
+  .topbar-actions .capacity-pill { display: none; }
+  .language-switch button { min-width: 31px; padding: 5px 6px; }
   .capacity-pill { font-size: .72rem; padding: 8px 10px; }
   .landing-grid { gap: 35px; min-height: auto; padding: 34px 18px 60px; }
   .intro-copy h1 { font-size: clamp(3rem, 16vw, 4.35rem); margin: 20px 0; }
