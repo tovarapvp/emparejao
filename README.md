@@ -87,6 +87,18 @@ El proyecto está pensado para comenzar con Cloudflare Workers Free + D1 Free. N
 
 Para una escala sostenida, el siguiente paso recomendado es reemplazar el polling restante por Durable Objects con WebSockets e hibernación, también disponibles con límites en el plan gratuito.
 
+### Despliegue con Cloudflare Workers Builds
+
+1. Crea una base D1 llamada `emparejao-db` desde **Storage & Databases → D1 SQL Database**.
+2. Copia el UUID de la base.
+3. En el Worker conectado a GitHub abre **Settings → Build → Build Variables and Secrets** y agrega `CLOUDFLARE_D1_DATABASE_ID` con ese UUID.
+4. Opcionalmente agrega `CLOUDFLARE_D1_DATABASE_NAME=emparejao-db`.
+5. Usa `npm run build` como comando de build y `npx wrangler deploy --config dist/server/wrangler.json` como comando de deploy.
+6. Antes de usar la aplicación, ejecuta en la consola SQL de D1 los archivos `drizzle/0000_stormy_pet_avengers.sql` y `drizzle/0001_great_mystique.sql`, en ese orden.
+7. Después del primer despliegue configura `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY` y `VAPID_SUBJECT` en **Settings → Variables and Secrets**. Guarda las tres como secretos para que Wrangler no las reemplace.
+
+El UUID de D1 no es una contraseña, pero la clave privada VAPID sí lo es y nunca debe incluirse en Git.
+
 ## Prueba de carga
 
 Con el servidor local ejecutándose:
