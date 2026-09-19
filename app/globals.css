@@ -123,6 +123,7 @@ button { cursor: pointer; }
   display: flex;
   gap: 13px;
 }
+.topbar-back svg { height: 16px; width: 16px; }
 
 .language-switch {
   align-items: center;
@@ -478,6 +479,8 @@ footer p { color: #716b62; margin: 0; }
   .topbar { height: 72px; padding: 0 18px; }
   .topbar-actions { gap: 9px; }
   .topbar-actions .capacity-pill { display: none; }
+  .topbar-back { padding: 6px; }
+  .topbar-back span { display: none; }
   .language-switch button { min-width: 31px; padding: 5px 6px; }
   .capacity-pill { font-size: .72rem; padding: 8px 10px; }
   .landing-grid { gap: 35px; min-height: auto; padding: 34px 18px 60px; }

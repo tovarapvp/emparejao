@@ -1008,6 +1008,15 @@ export default function Home() {
     window.history.replaceState({}, "", "/");
   }
 
+  function goBack() {
+    if (window.history.length > 1) {
+      window.history.back();
+      return;
+    }
+    setView(VIEW.HOME);
+    setError("");
+  }
+
   async function createRoom(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setBusy(true);
@@ -1188,6 +1197,9 @@ export default function Home() {
           <Brand />
           <div className="topbar-actions">
             <LanguageSwitch language={language} onChange={changeLanguage} label={copy.languageLabel} />
+            <button className="quiet-link topbar-back" type="button" onClick={goBack} aria-label={copy.back}>
+              <ArrowLeft aria-hidden="true" /><span>{copy.back}</span>
+            </button>
             <AlertDialog>
               <AlertDialogTrigger asChild>
                 <button className="quiet-link" type="button">{copy.exit}</button>
@@ -1319,6 +1331,9 @@ export default function Home() {
           <Brand />
           <div className="topbar-actions">
             <LanguageSwitch language={language} onChange={changeLanguage} label={copy.languageLabel} />
+            <button className="quiet-link topbar-back" type="button" onClick={goBack} aria-label={copy.back}>
+              <ArrowLeft aria-hidden="true" /><span>{copy.back}</span>
+            </button>
             <button className="quiet-link" onClick={leaveSession}>{copy.exit}</button>
           </div>
         </header>
