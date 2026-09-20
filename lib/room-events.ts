@@ -21,6 +21,7 @@ export interface RoomUpdatedEvent {
 
 export interface DrawStartedEvent {
   type: typeof ROOM_EVENT.DRAW_STARTED;
+  redraw?: boolean;
 }
 
 export type RoomEvent = RoomUpdatedEvent | DrawStartedEvent;

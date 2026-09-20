@@ -9,6 +9,7 @@ import {
   Copy,
   Crown,
   LoaderCircle,
+  RefreshCw,
   ScanLine,
   Share2,
   Sparkles,
@@ -98,6 +99,12 @@ const ES_COPY = {
   emptyRoom: "Aún no hay nadie en la sala.",
   drawSent: "Sorteo enviado",
   startDraw: "Iniciar sorteo",
+  changePairs: "Cambiar parejas",
+  changePairsTitle: "¿Cambiar todas las parejas?",
+  changePairsBody: "Cada participante recibirá una tarjeta nueva automáticamente. Nadie tendrá que volver a escanear ni entrar a la sala, y no se repetirá la pareja anterior.",
+  changePairsConfirm: "Cambiar ahora",
+  keepCurrentPairs: "Conservar parejas actuales",
+  changePairsMinimum: "Necesitas al menos 4 participantes para cambiar las parejas.",
   missing: "Faltan",
   closeCapacityWith: "Cerrar cupo con",
   present: "presentes",
@@ -178,6 +185,7 @@ const ES_COPY = {
   createFailed: "No pudimos crear la sala.",
   joinFailed: "No pudimos entrar a la sala.",
   drawFailed: "No pudimos iniciar el sorteo.",
+  redrawFailed: "No pudimos cambiar las parejas.",
   pushPartial: "El sorteo se completó, pero algunos avisos push podrían no haberse enviado.",
   copyFailed: "No pudimos copiar el enlace. Intenta compartirlo directamente.",
   shareCopyFailed: "No pudimos compartir ni copiar el enlace en este navegador.",
@@ -225,6 +233,12 @@ const EN_COPY: Record<TranslationKey, string> = {
   emptyRoom: "No one has joined yet.",
   drawSent: "Draw sent",
   startDraw: "Start draw",
+  changePairs: "Change partners",
+  changePairsTitle: "Change every pairing?",
+  changePairsBody: "Every participant will receive a new card automatically. No one needs to scan or join again, and nobody will keep their previous partner.",
+  changePairsConfirm: "Change now",
+  keepCurrentPairs: "Keep current pairings",
+  changePairsMinimum: "You need at least 4 participants to change partners.",
   missing: "Missing",
   closeCapacityWith: "Close entry with",
   present: "present",
@@ -305,6 +319,7 @@ const EN_COPY: Record<TranslationKey, string> = {
   createFailed: "We couldn’t create the room.",
   joinFailed: "We couldn’t join the room.",
   drawFailed: "We couldn’t start the draw.",
+  redrawFailed: "We couldn’t change the pairings.",
   pushPartial: "The draw finished, but some push notifications may not have been delivered.",
   copyFailed: "We couldn’t copy the link. Try sharing it directly.",
   shareCopyFailed: "This browser couldn’t share or copy the link.",
@@ -329,6 +344,7 @@ const EN_SERVER_ERRORS: Record<string, string> = {
   "Demasiados intentos. Espera un minuto y vuelve a intentar.": "Too many attempts. Wait one minute and try again.",
   "Solo el organizador puede iniciar el sorteo.": "Only the host can start the draw.",
   "Este sorteo ya fue realizado.": "This draw has already been completed.",
+  "Primero debes completar el sorteo inicial.": "Complete the initial draw first.",
   "El sorteo ya está en proceso.": "The draw is already in progress.",
   "Escribe un nombre y un PIN válidos.": "Enter a valid name and PIN.",
   "Esa sala no existe o ya venció.": "That room does not exist or has expired.",
@@ -338,6 +354,8 @@ const EN_SERVER_ERRORS: Record<string, string> = {
   "El grupo actual es impar. Espera una persona más o súmate como comodín.": "The current group is odd. Wait for one more person or join as the wildcard.",
   "El organizador solo puede sumarse cuando el grupo es impar.": "The host can only join when the group is odd.",
   "Necesitas al menos 2 personas para realizar el sorteo.": "You need at least 2 people to run the draw.",
+  "Se necesitan al menos 4 participantes para cambiar las parejas.": "You need at least 4 participants to change partners.",
+  "No se pudo reconstruir el sorteo anterior.": "The previous draw could not be reconstructed.",
   "Elige una cantidad par entre 2 y 800.": "Choose an even number from 2 to 800.",
   "No pudimos crear el PIN. Intenta de nuevo.": "We couldn’t create the PIN. Try again.",
   "Solo el organizador puede enviar los avisos.": "Only the host can send notifications.",
@@ -728,6 +746,8 @@ export default function Home() {
       if (!event.data || typeof event.data !== "object") return;
       const message = event.data as Record<string, unknown>;
       if (message.type === "DRAW_STARTED" && message.roomCode === session.code) {
+        setRevealing(true);
+        window.setTimeout(() => setRevealing(false), 1800);
         setRoomRefreshSignal((value) => value + 1);
       }
     };
@@ -843,6 +863,8 @@ export default function Home() {
             setRoomRefreshSignal((value) => value + 1);
           }
           if (message.type === "draw_started" && activeSession.role === "participant") {
+            setRevealing(true);
+            window.setTimeout(() => setRevealing(false), 1800);
             setRoomRefreshSignal((value) => value + 1);
           }
         } catch {
@@ -1068,7 +1090,7 @@ export default function Home() {
     }
   }
 
-  async function startDraw(closeWithPresent = false, includeHost = false) {
+  async function startDraw(closeWithPresent = false, includeHost = false, redraw = false) {
     if (!session) return;
     setBusy(true);
     setError("");
@@ -1079,7 +1101,7 @@ export default function Home() {
           authorization: `Bearer ${session.token}`,
           "content-type": "application/json",
         },
-        body: JSON.stringify({ closeWithPresent, includeHost }),
+        body: JSON.stringify({ closeWithPresent, includeHost, redraw }),
       });
       const updatedRoom = await api<HostRoom>(`/api/rooms/${session.code}`, {
         headers: { authorization: `Bearer ${session.token}` },
@@ -1092,7 +1114,7 @@ export default function Home() {
         setError(copy.pushPartial);
       }
     } catch (startError) {
-      setError(errorMessage(startError, copy.drawFailed, language));
+      setError(errorMessage(startError, redraw ? copy.redrawFailed : copy.drawFailed, language));
     } finally {
       setBusy(false);
     }
@@ -1271,6 +1293,31 @@ export default function Home() {
               {busy ? <LoaderCircle className="spin" /> : <Sparkles />}
               {hostRoom?.status === "drawn" ? copy.drawSent : roomFull ? copy.startDraw : `${copy.missing} ${(hostRoom?.expectedParticipants ?? 0) - participantCount}`}
             </Button>
+            {hostRoom?.status === "drawn" && participantCount >= 4 && (
+              <AlertDialog>
+                <AlertDialogTrigger asChild>
+                  <Button className="redraw-action" variant="outline" disabled={busy}>
+                    {busy ? <LoaderCircle className="spin" /> : <RefreshCw />}
+                    {copy.changePairs}
+                  </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent className="close-dialog">
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>{copy.changePairsTitle}</AlertDialogTitle>
+                    <AlertDialogDescription>{copy.changePairsBody}</AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>{copy.keepCurrentPairs}</AlertDialogCancel>
+                    <AlertDialogAction onClick={() => startDraw(false, false, true)}>
+                      {copy.changePairsConfirm}
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
+            )}
+            {hostRoom?.status === "drawn" && participantCount < 4 && (
+              <p className="lobby-hint">{copy.changePairsMinimum}</p>
+            )}
             {canCloseEarly && (
               <AlertDialog>
                 <AlertDialogTrigger asChild>

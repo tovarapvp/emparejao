@@ -86,6 +86,49 @@ validateVisualColors(
 
 console.log(`OK: ${TEST_PARTICIPANTS} participantes creados, emparejados y verificados.`);
 
+if (TEST_PARTICIPANTS >= 4) {
+  await request(`/api/rooms/${room.code}/start`, {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${room.hostToken}`,
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({ redraw: true }),
+  });
+
+  const changedResults = [];
+  for (let start = 0; start < TEST_PARTICIPANTS; start += CONCURRENCY) {
+    const reads = participants.slice(start, start + CONCURRENCY).map((participant) =>
+      request(`/api/rooms/${room.code}`, {
+        headers: { authorization: `Bearer ${participant.participantToken}` },
+      }),
+    );
+    changedResults.push(...(await Promise.all(reads)));
+  }
+
+  if (changedResults.some((item) => !item.result)) {
+    throw new Error("Uno o más cambios de pareja no fueron publicados.");
+  }
+  const changedByRed = new Map(changedResults.map((item) => [item.result.redNumber, item.result]));
+  for (let index = 0; index < changedResults.length; index += 1) {
+    const previous = results[index].result;
+    const current = changedResults[index].result;
+    const partner = changedByRed.get(current.blueNumber);
+    if (!partner || partner.blueNumber !== current.redNumber) {
+      throw new Error("El cambio de parejas no es simétrico.");
+    }
+    if (current.blueNumber === previous.blueNumber) {
+      throw new Error("Una persona conservó su pareja anterior.");
+    }
+  }
+  validateVisualColors(
+    changedResults.map((item) => item.result),
+    "El cambio repitió un número dentro del mismo color o asignó el mismo color a una pareja.",
+  );
+
+  console.log(`OK: ${TEST_PARTICIPANTS} participantes cambiaron de pareja sin volver a entrar.`);
+}
+
 const partialRoom = await request("/api/rooms", {
   method: "POST",
   headers: { "content-type": "application/json" },

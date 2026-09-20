@@ -329,6 +329,8 @@ button { cursor: pointer; }
 .early-close:hover { background: #ffdd3e; border-color: #151515; }
 .host-wildcard { background: #ffdd3e; border: 2px solid #151515; border-radius: 13px; color: #151515; height: 48px; margin-top: 10px; width: 100%; }
 .host-wildcard:hover { background: #ffd21c; }
+.redraw-action { align-items: center; background: #2d5ce7; border: 2px solid #151515; border-radius: 13px; color: #fff; display: flex; gap: 8px; height: 48px; justify-content: center; margin-top: 10px; width: 100%; }
+.redraw-action:hover { background: #214dcc; color: #fff; }
 .lobby-hint { color: #716b62; font-size: .8rem; line-height: 1.45; margin: 11px 8px 0; text-align: center; }
 .close-dialog { border: 2px solid #151515; border-radius: 20px; box-shadow: 9px 9px 0 #151515; }
 .form-error { color: #bd2d25; font-size: .86rem; font-weight: 650; margin: 14px 0 0; }

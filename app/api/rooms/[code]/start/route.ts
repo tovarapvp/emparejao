@@ -1,5 +1,9 @@
 import { getRawDb } from "@/db";
-import { createPairAssignments } from "@/lib/draw";
+import {
+  createChangedPairAssignments,
+  createPairAssignments,
+  type DrawAssignment,
+} from "@/lib/draw";
 import {
   bearerToken,
   normalizeCode,
@@ -17,13 +21,16 @@ export async function POST(request: Request, context: RouteContext) {
   try {
     let closeWithPresent = false;
     let includeHost = false;
+    let redraw = false;
     try {
       const payload = (await request.json()) as {
         closeWithPresent?: unknown;
         includeHost?: unknown;
+        redraw?: unknown;
       };
       closeWithPresent = payload.closeWithPresent === true;
       includeHost = payload.includeHost === true;
+      redraw = payload.redraw === true;
     } catch {
       // Requests from older clients still start normally when the room is full.
     }
@@ -43,13 +50,17 @@ export async function POST(request: Request, context: RouteContext) {
     if (!room || room.host_token !== hostToken) {
       return Response.json({ error: "Solo el organizador puede iniciar el sorteo." }, { status: 403 });
     }
-    if (room.status !== "lobby") {
+    if (!redraw && room.status !== "lobby") {
       return Response.json({ error: "Este sorteo ya fue realizado." }, { status: 409 });
     }
+    if (redraw && room.status !== "drawn") {
+      return Response.json({ error: "Primero debes completar el sorteo inicial." }, { status: 409 });
+    }
 
+    const previousStatus = redraw ? "drawn" : "lobby";
     const claim = await database
-      .prepare("UPDATE rooms SET status = 'drawing' WHERE id = ? AND status = 'lobby'")
-      .bind(room.id)
+      .prepare("UPDATE rooms SET status = 'drawing' WHERE id = ? AND status = ?")
+      .bind(room.id, previousStatus)
       .run();
     if ((claim.meta.changes ?? 0) === 0) {
       return Response.json({ error: "El sorteo ya está en proceso." }, { status: 409 });
@@ -57,14 +68,17 @@ export async function POST(request: Request, context: RouteContext) {
     const roomId = room.id;
 
     const roster = await database
-      .prepare("SELECT id, name, joined_at FROM participants WHERE room_id = ? ORDER BY joined_at, id")
+      .prepare(
+        `SELECT id, name, red_number, blue_number, joined_at
+         FROM participants WHERE room_id = ? ORDER BY joined_at, id`,
+      )
       .bind(roomId)
-      .all<Pick<ParticipantRecord, "id" | "name" | "joined_at">>();
+      .all<Pick<ParticipantRecord, "id" | "name" | "red_number" | "blue_number" | "joined_at">>();
 
-    async function reopenLobby(message: string) {
+    async function restoreRoom(message: string) {
       await database
-        .prepare("UPDATE rooms SET status = 'lobby' WHERE id = ? AND status = 'drawing'")
-        .bind(roomId)
+        .prepare("UPDATE rooms SET status = ? WHERE id = ? AND status = 'drawing'")
+        .bind(previousStatus, roomId)
         .run();
       return Response.json({ error: message }, { status: 409 });
     }
@@ -74,25 +88,53 @@ export async function POST(request: Request, context: RouteContext) {
 
     if (drawingRoster.length % 2 !== 0) {
       if (!includeHost) {
-        return reopenLobby("El grupo actual es impar. Espera una persona más o súmate como comodín.");
+        return restoreRoom("El grupo actual es impar. Espera una persona más o súmate como comodín.");
       }
       hostParticipantId = crypto.randomUUID();
       drawingRoster = [
         ...drawingRoster,
-        { id: hostParticipantId, name: "Organizador (comodín)", joined_at: Date.now() },
+        {
+          id: hostParticipantId,
+          name: "Organizador (comodín)",
+          red_number: null,
+          blue_number: null,
+          joined_at: Date.now(),
+        },
       ];
     } else if (includeHost) {
-      return reopenLobby("El organizador solo puede sumarse cuando el grupo es impar.");
+      return restoreRoom("El organizador solo puede sumarse cuando el grupo es impar.");
     }
 
     if (drawingRoster.length < 2) {
-      return reopenLobby("Necesitas al menos 2 personas para realizar el sorteo.");
+      return restoreRoom("Necesitas al menos 2 personas para realizar el sorteo.");
     }
     if (!closeWithPresent && drawingRoster.length !== room.expected_participants) {
-      return reopenLobby(`Faltan ${room.expected_participants - drawingRoster.length} personas por entrar.`);
+      return restoreRoom(`Faltan ${room.expected_participants - drawingRoster.length} personas por entrar.`);
     }
 
-    const assignments = createPairAssignments(drawingRoster);
+    let assignments: DrawAssignment[];
+    if (redraw) {
+      if (drawingRoster.length < 4) {
+        return restoreRoom("Se necesitan al menos 4 participantes para cambiar las parejas.");
+      }
+      const participantByRedNumber = new Map(
+        drawingRoster
+          .filter((participant) => participant.red_number !== null)
+          .map((participant) => [participant.red_number, participant.id]),
+      );
+      const previousPartnerById = new Map<string, string>();
+      for (const participant of drawingRoster) {
+        if (participant.blue_number === null) {
+          return restoreRoom("No se pudo reconstruir el sorteo anterior.");
+        }
+        const partnerId = participantByRedNumber.get(participant.blue_number);
+        if (!partnerId) return restoreRoom("No se pudo reconstruir el sorteo anterior.");
+        previousPartnerById.set(participant.id, partnerId);
+      }
+      assignments = createChangedPairAssignments(drawingRoster, previousPartnerById);
+    } else {
+      assignments = createPairAssignments(drawingRoster);
+    }
     const updates = [];
     if (hostParticipantId) {
       updates.push(
@@ -135,8 +177,8 @@ export async function POST(request: Request, context: RouteContext) {
       await database.batch(updates);
     } catch (error) {
       await database
-        .prepare("UPDATE rooms SET status = 'lobby' WHERE id = ? AND status = 'drawing'")
-        .bind(room.id)
+        .prepare("UPDATE rooms SET status = ? WHERE id = ? AND status = 'drawing'")
+        .bind(previousStatus, room.id)
         .run();
       throw error;
     }
@@ -144,10 +186,11 @@ export async function POST(request: Request, context: RouteContext) {
     const hostAssignment = hostParticipantId
       ? assignments.find((assignment) => assignment.participantId === hostParticipantId)
       : undefined;
-    await publishRoomEvent(code, { type: "draw_started" }, "participant");
+    await publishRoomEvent(code, { type: "draw_started", redraw }, "participant");
     return Response.json({
       status: "drawn",
       participantCount: assignments.length,
+      redraw,
       hostResult: hostAssignment
         ? { redNumber: hostAssignment.redNumber, blueNumber: hostAssignment.blueNumber }
         : null,
