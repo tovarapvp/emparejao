@@ -48,7 +48,8 @@ export async function POST(request: Request) {
       { authenticated: true, email: admin.email },
       { headers: { "Set-Cookie": adminSessionCookie(sessionToken, request) } },
     );
-  } catch {
+  } catch (error) {
+    console.error("Admin login failed", error);
     return Response.json({ error: "No se pudo iniciar sesión." }, { status: 500 });
   }
 }

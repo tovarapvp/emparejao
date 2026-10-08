@@ -2,7 +2,9 @@ import { env } from "cloudflare:workers";
 
 const ADMIN_COOKIE = "emparejao-admin-session";
 const DEFAULT_SUPER_ADMIN_EMAIL = "tovarapvp@gmail.com";
-const PASSWORD_ITERATIONS = 310_000;
+// Keep password hashing below the 10 ms CPU budget of Cloudflare Workers Free.
+// Web Crypto still performs the work natively; 50k iterations takes roughly 5 ms.
+const PASSWORD_ITERATIONS = 50_000;
 const SESSION_DURATION_MS = 12 * 60 * 60 * 1000;
 
 interface AdminSessionRecord {
@@ -91,7 +93,7 @@ export function setupTokenConfigured() {
 }
 
 export function validateAdminPassword(password: string) {
-  if (password.length < 12) return "La contraseña debe tener al menos 12 caracteres.";
+  if (password.length < 8) return "La contraseña debe tener al menos 8 caracteres.";
   if (password.length > 200) return "La contraseña es demasiado larga.";
   return null;
 }

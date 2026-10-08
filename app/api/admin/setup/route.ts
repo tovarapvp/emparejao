@@ -72,7 +72,8 @@ export async function POST(request: Request) {
       { authenticated: true, email: superAdminEmail() },
       { status: 201, headers: { "Set-Cookie": adminSessionCookie(sessionToken, request) } },
     );
-  } catch {
+  } catch (error) {
+    console.error("Admin setup failed", error);
     return Response.json({ error: "No se pudo crear el superadmin." }, { status: 500 });
   }
 }

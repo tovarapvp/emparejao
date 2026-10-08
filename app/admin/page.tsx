@@ -292,7 +292,7 @@ export default function AdminPage() {
               <Input
                 type="password"
                 autoComplete={status.setupRequired ? "new-password" : "current-password"}
-                minLength={12}
+                minLength={8}
                 value={password}
                 onChange={(event) => setPassword(event.target.value)}
                 required
@@ -304,7 +304,7 @@ export default function AdminPage() {
                 <Input
                   type="password"
                   autoComplete="new-password"
-                  minLength={12}
+                  minLength={8}
                   value={passwordConfirmation}
                   onChange={(event) => setPasswordConfirmation(event.target.value)}
                   required
