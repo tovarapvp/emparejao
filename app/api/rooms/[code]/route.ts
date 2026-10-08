@@ -24,7 +24,7 @@ export async function GET(request: Request, context: RouteContext) {
     const room = await database
       .prepare(
         `SELECT id, code, host_token, expected_participants, status, expires_at, version
-         FROM rooms WHERE code = ? AND expires_at > ? LIMIT 1`,
+         FROM rooms WHERE code = ? AND expires_at > ? AND archived_at IS NULL LIMIT 1`,
       )
       .bind(code, Date.now())
       .first<RoomRecord>();
@@ -71,13 +71,22 @@ export async function GET(request: Request, context: RouteContext) {
 
     const participant = await database
       .prepare(
-        `SELECT id, name, access_token, red_number, blue_number, joined_at
+        `SELECT id, name, access_token, red_number, blue_number, joined_at,
+                last_seen_at, result_viewed_at, notification_enabled, pair_confirmed_at
          FROM participants WHERE room_id = ? AND access_token = ? LIMIT 1`,
       )
       .bind(room.id, token)
       .first<ParticipantRecord>();
     if (!participant) {
       return Response.json({ error: "Tu acceso a la sala no es válido." }, { status: 401 });
+    }
+
+    const now = Date.now();
+    if (!participant.last_seen_at || now - participant.last_seen_at > 5 * 60_000) {
+      await database
+        .prepare("UPDATE participants SET last_seen_at = ? WHERE id = ?")
+        .bind(now, participant.id)
+        .run();
     }
 
     return Response.json({
@@ -91,6 +100,7 @@ export async function GET(request: Request, context: RouteContext) {
           ? room.expected_participants
           : Math.max(0, room.version - 1),
       version: room.version,
+      pairConfirmedAt: participant.pair_confirmed_at ?? null,
       result:
         room.status === "drawn" && participant.red_number && participant.blue_number
           ? { redNumber: participant.red_number, blueNumber: participant.blue_number }

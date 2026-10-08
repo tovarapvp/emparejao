@@ -8,6 +8,8 @@ export const rooms = sqliteTable(
     hostToken: text("host_token").notNull(),
     expectedParticipants: integer("expected_participants").notNull(),
     status: text("status").notNull().default("lobby"),
+    joinLocked: integer("join_locked", { mode: "boolean" }).notNull().default(false),
+    archivedAt: integer("archived_at"),
     createdAt: integer("created_at").notNull(),
     expiresAt: integer("expires_at").notNull(),
     version: integer("version").notNull().default(1),
@@ -15,6 +17,7 @@ export const rooms = sqliteTable(
   (table) => [
     uniqueIndex("rooms_code_unique").on(table.code),
     index("rooms_expires_at_idx").on(table.expiresAt),
+    index("rooms_archived_at_idx").on(table.archivedAt),
   ],
 );
 
@@ -30,11 +33,18 @@ export const participants = sqliteTable(
     redNumber: integer("red_number"),
     blueNumber: integer("blue_number"),
     joinedAt: integer("joined_at").notNull(),
+    lastSeenAt: integer("last_seen_at"),
+    resultViewedAt: integer("result_viewed_at"),
+    notificationEnabled: integer("notification_enabled", { mode: "boolean" })
+      .notNull()
+      .default(false),
+    pairConfirmedAt: integer("pair_confirmed_at"),
   },
   (table) => [
     uniqueIndex("participants_access_token_unique").on(table.accessToken),
     index("participants_room_idx").on(table.roomId),
     index("participants_room_token_idx").on(table.roomId, table.accessToken),
+    index("participants_room_last_seen_idx").on(table.roomId, table.lastSeenAt),
   ],
 );
 

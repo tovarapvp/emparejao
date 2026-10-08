@@ -31,6 +31,23 @@ export async function publishRoomEvent(
   event: RoomEvent,
   target: RoomEventTarget = ROOM_EVENT_TARGET.ALL,
 ) {
+  return publishEvent(roomCode, event, target);
+}
+
+export async function publishParticipantRoomEvent(
+  roomCode: string,
+  participantId: string,
+  event: RoomEvent,
+) {
+  return publishEvent(roomCode, event, ROOM_EVENT_TARGET.PARTICIPANT, participantId);
+}
+
+async function publishEvent(
+  roomCode: string,
+  event: RoomEvent,
+  target: RoomEventTarget,
+  participantId?: string,
+) {
   const namespace = env.ROOM_HUB;
   if (!namespace) return;
 
@@ -40,7 +57,7 @@ export async function publishRoomEvent(
       {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ event, target }),
+        body: JSON.stringify({ event, target, participantId }),
       },
     );
     if (!response.ok) {

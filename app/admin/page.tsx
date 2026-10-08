@@ -1,73 +1,34 @@
 "use client";
 
 import {
-  AlertTriangle,
-  ArrowLeftRight,
-  CheckCircle2,
-  Clock3,
-  DoorOpen,
-  LoaderCircle,
-  LogOut,
-  RefreshCw,
-  ShieldCheck,
-  Ticket,
-  Users,
+  AlertTriangle, Archive, ArrowLeftRight, BellOff, CheckCircle2, ChevronDown, CircleAlert, Clock3, DoorOpen, Download, History, KeyRound, LoaderCircle, LockKeyhole, LogOut, Pencil, RefreshCw, RotateCcw, Search, Send, ShieldCheck, Ticket, Trash2, UnlockKeyhole, UserRoundX, Users, WifiOff,
 } from "lucide-react";
 import { useEffect, useState, type FormEvent } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import styles from "./admin.module.css";
 
-const ROOM_STATUS = {
-  LOBBY: "lobby",
-  DRAWING: "drawing",
-  DRAWN: "drawn",
-} as const;
-
-interface AdminStatus {
-  setupRequired: boolean;
-  setupConfigured: boolean;
-  authenticated: boolean;
-  email: string;
-}
-
-interface AdminRoom {
-  id: string;
-  code: string;
-  status: string;
-  active: boolean;
-  expectedParticipants: number;
-  participantCount: number;
-  createdAt: number;
-  expiresAt: number;
-}
-
-interface AdminParticipant {
-  id: string;
-  name: string;
-  redNumber: number | null;
-  blueNumber: number | null;
-  joinedAt: number;
-}
-
-interface AdminPairParticipant {
-  id: string;
-  name: string;
-  number: number;
-}
-
-interface AdminPair {
-  id: string;
-  first: AdminPairParticipant;
-  second: AdminPairParticipant;
-}
-
-interface AdminRoomDetail {
-  room: AdminRoom & { version: number };
-  participants: AdminParticipant[];
-  pairs: AdminPair[];
-  unmatched: AdminParticipant[];
-}
+const ROOM_STATUS = { LOBBY: "lobby", DRAWING: "drawing", DRAWN: "drawn" } as const;
+const ROOM_FILTER = { ALL: "all", ACTIVE: "active", LOBBY: "lobby", DRAWING: "drawing", DRAWN: "drawn", EXPIRED: "expired", ARCHIVED: "archived" } as const;
+const PARTICIPANT_ACTION = { RENAME: "rename", DELETE: "delete", RESEND_RESULT: "resend_result", CONFIRM_PAIR: "confirm_pair", RESET_CONFIRMATION: "reset_pair_confirmation" } as const;
+const ROOM_ACTION = { EXTEND: "extend_expiry", LOCK: "lock_joins", UNLOCK: "unlock_joins", RESET_DRAW: "reset_draw", REDRAW: "redraw", ARCHIVE: "archive" } as const;
+const CONFIRMATION_KIND = { PARTICIPANT_DELETE: "participant_delete", ROOM_ACTION: "room_action", REVOKE_SESSIONS: "revoke_sessions" } as const;
+const EXPORT_KIND = { ROOMS: "rooms", PARTICIPANTS: "participants", PAIRS: "pairs" } as const;
+type RoomFilter = (typeof ROOM_FILTER)[keyof typeof ROOM_FILTER];
+type ParticipantAction = (typeof PARTICIPANT_ACTION)[keyof typeof PARTICIPANT_ACTION];
+type RoomAction = (typeof ROOM_ACTION)[keyof typeof ROOM_ACTION];
+type ConfirmationKind = (typeof CONFIRMATION_KIND)[keyof typeof CONFIRMATION_KIND];
+type ExportKind = (typeof EXPORT_KIND)[keyof typeof EXPORT_KIND];
+interface AdminStatus { setupRequired: boolean; setupConfigured: boolean; authenticated: boolean; email: string; }
+interface AdminRoom { id: string; code: string; status: string; active: boolean; expectedParticipants: number; participantCount: number; createdAt: number; expiresAt: number; joinLocked?: boolean; archivedAt?: number | null; }
+interface AdminParticipant { id: string; name: string; redNumber: number | null; blueNumber: number | null; joinedAt: number; online?: boolean; lastSeenAt?: number | null; resultViewedAt?: number | null; notificationEnabled?: boolean; pairConfirmedAt?: number | null; }
+interface AdminPairParticipant { id: string; name: string; number: number; }
+interface AdminPair { id: string; first: AdminPairParticipant; second: AdminPairParticipant; }
+interface AdminAlerts { archived: boolean; expired: boolean; joinsLocked: boolean; participantShortfall: number; duplicateNameCount: number; duplicateNumberCount: number; unmatchedCount: number; onlineParticipantCount: number; }
+interface AdminDuplicateName { name: string; participantIds: string[]; }
+interface AdminRoomDetail { room: AdminRoom & { version: number }; participants: AdminParticipant[]; pairs: AdminPair[]; unmatched: AdminParticipant[]; alerts?: AdminAlerts; duplicateNames?: AdminDuplicateName[]; duplicateNumbers?: number[]; presenceSource?: string; }
+interface AuditEntry { id?: string; action?: string; roomCode?: string; details?: string; createdAt?: number; }
+interface Confirmation { kind: ConfirmationKind; title: string; description: string; roomAction?: RoomAction; participantId?: string; }
 
 async function adminApi<T>(path: string, init?: RequestInit) {
   const response = await fetch(path, { ...init, cache: "no-store" });
@@ -75,20 +36,8 @@ async function adminApi<T>(path: string, init?: RequestInit) {
   if (!response.ok) throw new Error(body.error ?? "No se pudo completar la acción.");
   return body;
 }
-
-function dateTime(value: number) {
-  return new Intl.DateTimeFormat("es-VE", {
-    dateStyle: "short",
-    timeStyle: "short",
-  }).format(new Date(value));
-}
-
-function roomStatusLabel(room: AdminRoom) {
-  if (!room.active) return "Vencida";
-  if (room.status === ROOM_STATUS.DRAWN) return "Sorteada";
-  if (room.status === ROOM_STATUS.DRAWING) return "Procesando";
-  return "En espera";
-}
+function dateTime(value?: number | null) { return value ? new Intl.DateTimeFormat("es-VE", { dateStyle: "short", timeStyle: "short" }).format(new Date(value)) : "Sin registro"; }
+function roomStatusLabel(room: AdminRoom) { if (room.archivedAt) return "Archivada"; if (!room.active) return "Vencida"; if (room.status === ROOM_STATUS.DRAWN) return "Sorteada"; if (room.status === ROOM_STATUS.DRAWING) return "Procesando"; return "En espera"; }
 
 export default function AdminPage() {
   const [status, setStatus] = useState<AdminStatus | null>(null);
@@ -96,381 +45,70 @@ export default function AdminPage() {
   const [selectedRoomId, setSelectedRoomId] = useState("");
   const [detail, setDetail] = useState<AdminRoomDetail | null>(null);
   const [selectedParticipants, setSelectedParticipants] = useState<string[]>([]);
-  const [password, setPassword] = useState("");
-  const [passwordConfirmation, setPasswordConfirmation] = useState("");
-  const [setupToken, setSetupToken] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [loadingRooms, setLoadingRooms] = useState(false);
-  const [error, setError] = useState("");
+  const [password, setPassword] = useState(""); const [passwordConfirmation, setPasswordConfirmation] = useState(""); const [setupToken, setSetupToken] = useState("");
+  const [currentPassword, setCurrentPassword] = useState(""); const [newPassword, setNewPassword] = useState("");
+  const [exportKind, setExportKind] = useState<ExportKind>(EXPORT_KIND.ROOMS);
+  const [roomSearch, setRoomSearch] = useState(""); const [roomFilter, setRoomFilter] = useState<RoomFilter>(ROOM_FILTER.ALL); const [roomDate, setRoomDate] = useState(""); const [personSearch, setPersonSearch] = useState("");
+  const [editingParticipantId, setEditingParticipantId] = useState(""); const [editingName, setEditingName] = useState("");
+  const [auditEntries, setAuditEntries] = useState<AuditEntry[]>([]); const [auditOpen, setAuditOpen] = useState(false); const [confirmation, setConfirmation] = useState<Confirmation | null>(null);
+  const [notice, setNotice] = useState(""); const [securityWarningVisible, setSecurityWarningVisible] = useState(true); const [busy, setBusy] = useState(false); const [loadingRooms, setLoadingRooms] = useState(false); const [error, setError] = useState("");
 
-  async function loadStatus() {
-    try {
-      const nextStatus = await adminApi<AdminStatus>("/api/admin/status");
-      setStatus(nextStatus);
-      setError("");
-    } catch (statusError) {
-      setError(statusError instanceof Error ? statusError.message : "No se pudo abrir el panel.");
-    }
-  }
+  async function loadStatus() { try { setStatus(await adminApi<AdminStatus>("/api/admin/status")); setError(""); } catch (caught) { setError(caught instanceof Error ? caught.message : "No se pudo abrir el panel."); } }
+  async function loadRooms(silent = false) { if (!silent) setLoadingRooms(true); try { const response = await adminApi<{ rooms: AdminRoom[] }>("/api/admin/rooms"); setRooms(response.rooms); setSelectedRoomId((current) => response.rooms.some((room) => room.id === current) ? current : response.rooms[0]?.id || ""); setError(""); } catch (caught) { setError(caught instanceof Error ? caught.message : "No se pudieron cargar las salas."); } finally { setLoadingRooms(false); } }
+  async function loadDetail(roomId: string, silent = false) { if (!roomId) { setDetail(null); return; } try { setDetail(await adminApi<AdminRoomDetail>(`/api/admin/rooms/${roomId}`)); if (!silent) setSelectedParticipants([]); setError(""); } catch (caught) { setError(caught instanceof Error ? caught.message : "No se pudo cargar la sala."); } }
+  async function refreshRoom() { if (detail) await Promise.all([loadRooms(true), loadDetail(detail.room.id, true)]); }
+  async function loadAudit() { try { const response = await adminApi<{ entries: AuditEntry[] }>("/api/admin/audit?page=1&limit=50"); setAuditEntries(response.entries); setAuditOpen(true); } catch (caught) { setError(caught instanceof Error ? caught.message : "No se pudo cargar el historial."); } }
+  useEffect(() => { const timer = window.setTimeout(() => void loadStatus(), 0); return () => window.clearTimeout(timer); }, []);
+  useEffect(() => { if (!status?.authenticated) return; const initialTimer = window.setTimeout(() => void loadRooms(), 0); const refreshTimer = window.setInterval(() => void loadRooms(true), 10_000); return () => { window.clearTimeout(initialTimer); window.clearInterval(refreshTimer); }; }, [status?.authenticated]);
+  useEffect(() => { if (!status?.authenticated || !selectedRoomId) return; const initialTimer = window.setTimeout(() => void loadDetail(selectedRoomId), 0); const refreshTimer = window.setInterval(() => void loadDetail(selectedRoomId, true), 7_000); return () => { window.clearTimeout(initialTimer); window.clearInterval(refreshTimer); }; }, [selectedRoomId, status?.authenticated]);
 
-  async function loadRooms(silent = false) {
-    if (!silent) setLoadingRooms(true);
-    try {
-      const response = await adminApi<{ rooms: AdminRoom[] }>("/api/admin/rooms");
-      setRooms(response.rooms);
-      setSelectedRoomId((current) =>
-        response.rooms.some((room) => room.id === current) ? current : response.rooms[0]?.id || "",
-      );
-      setError("");
-    } catch (roomsError) {
-      setError(roomsError instanceof Error ? roomsError.message : "No se pudieron cargar las salas.");
-    } finally {
-      setLoadingRooms(false);
-    }
-  }
+  async function submitAccess(event: FormEvent<HTMLFormElement>) { event.preventDefault(); if (!status) return; if (status.setupRequired && password !== passwordConfirmation) { setError("Las contraseñas no coinciden."); return; } setBusy(true); setError(""); try { await adminApi(status.setupRequired ? "/api/admin/setup" : "/api/admin/login", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ email: status.email, password, ...(status.setupRequired ? { setupToken } : {}) }) }); setPassword(""); setPasswordConfirmation(""); setSetupToken(""); await loadStatus(); } catch (caught) { setError(caught instanceof Error ? caught.message : "No se pudo validar el acceso."); } finally { setBusy(false); } }
+  async function logout() { setBusy(true); try { await adminApi("/api/admin/logout", { method: "POST" }); setRooms([]); setDetail(null); setSelectedRoomId(""); await loadStatus(); } catch (caught) { setError(caught instanceof Error ? caught.message : "No se pudo cerrar la sesión."); } finally { setBusy(false); } }
+  function toggleParticipant(id: string) { setSelectedParticipants((current) => current.includes(id) ? current.filter((item) => item !== id) : current.length >= 2 ? [current[1], id] : [...current, id]); }
+  async function matchSelected() { if (!detail || selectedParticipants.length !== 2) return; setBusy(true); try { await adminApi(`/api/admin/rooms/${detail.room.id}/match`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ firstParticipantId: selectedParticipants[0], secondParticipantId: selectedParticipants[1] }) }); setSelectedParticipants([]); setNotice("La pareja manual quedó guardada."); await refreshRoom(); } catch (caught) { setError(caught instanceof Error ? caught.message : "No se pudo guardar la pareja."); } finally { setBusy(false); } }
+  async function updateParticipantName(participantId: string) { if (!detail || !editingName.trim()) return; await participantAction(participantId, PARTICIPANT_ACTION.RENAME, editingName.trim()); setEditingParticipantId(""); setEditingName(""); }
+  async function participantAction(participantId: string, action: ParticipantAction, name?: string) { if (!detail) return; setBusy(true); try { await adminApi(`/api/admin/rooms/${detail.room.id}/participants/${participantId}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action, ...(name ? { name } : {}) }) }); setNotice(action === PARTICIPANT_ACTION.RESEND_RESULT ? "Se solicitó el reenvío del resultado." : action === PARTICIPANT_ACTION.DELETE ? "El participante fue eliminado." : action === PARTICIPANT_ACTION.RENAME ? "El nombre se actualizó." : "Se actualizó la confirmación de pareja."); await refreshRoom(); } catch (caught) { setError(caught instanceof Error ? caught.message : "No se pudo completar la acción."); } finally { setBusy(false); } }
+  async function roomAction(action: RoomAction, minutes?: number) { if (!detail) return; setBusy(true); try { await adminApi(`/api/admin/rooms/${detail.room.id}/actions`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action, ...(minutes ? { minutes } : {}) }) }); setNotice("La acción de sala se completó."); await refreshRoom(); } catch (caught) { setError(caught instanceof Error ? caught.message : "No se pudo actualizar la sala."); } finally { setBusy(false); } }
+  async function deleteParticipant(participantId: string) { await participantAction(participantId, PARTICIPANT_ACTION.DELETE); }
+  async function changePassword(event: FormEvent<HTMLFormElement>) { event.preventDefault(); if (newPassword.length < 8) { setError("La nueva contraseña necesita al menos 8 caracteres."); return; } setBusy(true); try { await adminApi("/api/admin/security/change-password", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ currentPassword, newPassword }) }); setCurrentPassword(""); setNewPassword(""); setNotice("La contraseña se actualizó."); } catch (caught) { setError(caught instanceof Error ? caught.message : "No se pudo cambiar la contraseña."); } finally { setBusy(false); } }
+  async function revokeSessions() { setBusy(true); try { await adminApi("/api/admin/security/revoke-all-sessions", { method: "POST" }); setNotice("Se revocaron las otras sesiones activas."); } catch (caught) { setError(caught instanceof Error ? caught.message : "No se pudieron revocar las sesiones."); } finally { setBusy(false); } }
+  async function downloadCsv() { setBusy(true); try { const response = await fetch(`/api/admin/export?type=${exportKind}`, { cache: "no-store" }); if (!response.ok) throw new Error("No se pudo preparar el CSV."); const url = URL.createObjectURL(await response.blob()); const anchor = document.createElement("a"); anchor.href = url; anchor.download = `emparejao-${exportKind}.csv`; anchor.click(); URL.revokeObjectURL(url); } catch (caught) { setError(caught instanceof Error ? caught.message : "No se pudo descargar el CSV."); } finally { setBusy(false); } }
+  async function confirmAction() { if (!confirmation) return; const current = confirmation; setConfirmation(null); if (current.kind === CONFIRMATION_KIND.PARTICIPANT_DELETE && current.participantId) await deleteParticipant(current.participantId); if (current.kind === CONFIRMATION_KIND.ROOM_ACTION && current.roomAction) await roomAction(current.roomAction, current.roomAction === ROOM_ACTION.EXTEND ? 1440 : undefined); if (current.kind === CONFIRMATION_KIND.REVOKE_SESSIONS) await revokeSessions(); }
 
-  async function loadDetail(roomId: string, silent = false) {
-    if (!roomId) {
-      setDetail(null);
-      return;
-    }
-    try {
-      const response = await adminApi<AdminRoomDetail>(`/api/admin/rooms/${roomId}`);
-      setDetail(response);
-      if (!silent) setSelectedParticipants([]);
-      setError("");
-    } catch (detailError) {
-      setError(detailError instanceof Error ? detailError.message : "No se pudo cargar la sala.");
-    }
-  }
+  if (!status) return <main className={styles.centered}><LoaderCircle className={styles.spin} /><p>{error || "Comprobando acceso seguro…"}</p></main>;
+  if (!status.authenticated) return <main className={styles.authShell}><section className={styles.authCard}><div className={styles.adminMark}><ShieldCheck /></div><span className={styles.kicker}>Emparejao · acceso privado</span><h1>{status.setupRequired ? "Configura tu superadmin" : "Panel superadmin"}</h1><p>{status.setupRequired ? "Crea la contraseña que usarás para revisar las salas y resolver incidencias." : "Entra para supervisar salas, participantes y parejas."}</p>{status.setupRequired && !status.setupConfigured && <div className={styles.warning}><AlertTriangle /><span>Primero configura el secreto <strong>ADMIN_SETUP_TOKEN</strong> en Cloudflare.</span></div>}<form className={styles.authForm} onSubmit={submitAccess}><label>Correo del superadmin<Input value={status.email} disabled /></label>{status.setupRequired && <label>Clave inicial de configuración<Input type="password" autoComplete="one-time-code" value={setupToken} onChange={(event) => setSetupToken(event.target.value)} required /></label>}<label>{status.setupRequired ? "Crea una contraseña" : "Contraseña"}<Input type="password" autoComplete={status.setupRequired ? "new-password" : "current-password"} minLength={8} value={password} onChange={(event) => setPassword(event.target.value)} required /></label>{status.setupRequired && <label>Repite la contraseña<Input type="password" autoComplete="new-password" minLength={8} value={passwordConfirmation} onChange={(event) => setPasswordConfirmation(event.target.value)} required /></label>}{error && <p className={styles.formError} role="alert">{error}</p>}<Button type="submit" disabled={busy || (status.setupRequired && !status.setupConfigured)}>{busy ? <LoaderCircle className={styles.spin} /> : <ShieldCheck />}{status.setupRequired ? "Crear acceso seguro" : "Entrar al panel"}</Button></form></section></main>;
 
-  useEffect(() => {
-    const timer = window.setTimeout(() => void loadStatus(), 0);
-    return () => window.clearTimeout(timer);
-  }, []);
+  const activeRooms = rooms.filter((room) => room.active && !room.archivedAt).length;
+  const liveParticipants = rooms.filter((room) => room.active).reduce((total, room) => total + room.participantCount, 0);
+  const duplicateNames = detail?.duplicateNames ?? detail?.participants.filter((participant, index, all) => all.some((other, otherIndex) => otherIndex !== index && other.name.trim().toLocaleLowerCase() === participant.name.trim().toLocaleLowerCase())).map((participant) => ({ name: participant.name, participantIds: [participant.id] })) ?? [];
+  const duplicateNumbers = detail?.duplicateNumbers ?? detail?.participants.filter((participant, index, all) => participant.redNumber !== null && all.some((other, otherIndex) => otherIndex !== index && other.redNumber === participant.redNumber)).map((participant) => participant.redNumber ?? 0) ?? [];
+  const disconnected = detail?.participants.filter((participant) => participant.online === false) ?? [];
+  const unviewed = detail?.participants.filter((participant) => detail.room.status === ROOM_STATUS.DRAWN && !participant.resultViewedAt) ?? [];
+  const notificationsOff = detail?.participants.filter((participant) => participant.notificationEnabled === false) ?? [];
+  const unconfirmed = detail?.participants.filter((participant) => detail.room.status === ROOM_STATUS.DRAWN && !participant.pairConfirmedAt) ?? [];
+  const roomAlertCount = Number(Boolean(detail?.alerts?.archived)) + Number(Boolean(detail?.alerts?.expired)) + Number(Boolean(detail?.alerts?.joinsLocked)) + Number(Boolean(detail?.alerts?.participantShortfall));
+  const alertCount = (detail?.unmatched.length ?? 0) + duplicateNames.length + duplicateNumbers.length + disconnected.length + unviewed.length + notificationsOff.length + unconfirmed.length + roomAlertCount;
+  const filteredRooms = rooms.filter((room) => { const matchesSearch = `${room.code} ${room.status}`.toLowerCase().includes(roomSearch.trim().toLowerCase()); const matchesDate = !roomDate || new Date(room.createdAt).toISOString().slice(0, 10) === roomDate; const matchesFilter = roomFilter === ROOM_FILTER.ALL || (roomFilter === ROOM_FILTER.ACTIVE && room.active && !room.archivedAt) || (roomFilter === ROOM_FILTER.EXPIRED && !room.active && !room.archivedAt) || (roomFilter === ROOM_FILTER.ARCHIVED && Boolean(room.archivedAt)) || room.status === roomFilter; return matchesSearch && matchesDate && matchesFilter; });
+  const filteredParticipants = detail?.participants.filter((participant) => `${participant.name} ${participant.redNumber ?? ""} ${participant.blueNumber ?? ""}`.toLowerCase().includes(personSearch.trim().toLowerCase())) ?? [];
+  const filteredPairs = detail?.pairs.filter((pair) => `${pair.first.name} ${pair.first.number} ${pair.second.name} ${pair.second.number}`.toLowerCase().includes(personSearch.trim().toLowerCase())) ?? [];
 
-  useEffect(() => {
-    if (!status?.authenticated) return;
-    const initialTimer = window.setTimeout(() => void loadRooms(), 0);
-    const refreshTimer = window.setInterval(() => void loadRooms(true), 10_000);
-    return () => {
-      window.clearTimeout(initialTimer);
-      window.clearInterval(refreshTimer);
-    };
-  }, [status?.authenticated]);
-
-  useEffect(() => {
-    if (!status?.authenticated || !selectedRoomId) return;
-    const initialTimer = window.setTimeout(() => void loadDetail(selectedRoomId), 0);
-    const refreshTimer = window.setInterval(() => void loadDetail(selectedRoomId, true), 7_000);
-    return () => {
-      window.clearTimeout(initialTimer);
-      window.clearInterval(refreshTimer);
-    };
-  }, [selectedRoomId, status?.authenticated]);
-
-  async function submitAccess(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!status) return;
-    if (status.setupRequired && password !== passwordConfirmation) {
-      setError("Las contraseñas no coinciden.");
-      return;
-    }
-    setBusy(true);
-    setError("");
-    try {
-      const endpoint = status.setupRequired ? "/api/admin/setup" : "/api/admin/login";
-      await adminApi(endpoint, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          email: status.email,
-          password,
-          ...(status.setupRequired ? { setupToken } : {}),
-        }),
-      });
-      setPassword("");
-      setPasswordConfirmation("");
-      setSetupToken("");
-      await loadStatus();
-    } catch (accessError) {
-      setError(accessError instanceof Error ? accessError.message : "No se pudo validar el acceso.");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function logout() {
-    setBusy(true);
-    try {
-      await adminApi("/api/admin/logout", { method: "POST" });
-      setRooms([]);
-      setDetail(null);
-      setSelectedRoomId("");
-      await loadStatus();
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  function toggleParticipant(participantId: string) {
-    setSelectedParticipants((current) => {
-      if (current.includes(participantId)) return current.filter((id) => id !== participantId);
-      if (current.length >= 2) return [current[1], participantId];
-      return [...current, participantId];
-    });
-  }
-
-  async function matchSelected() {
-    if (!detail || selectedParticipants.length !== 2) return;
-    setBusy(true);
-    setError("");
-    try {
-      await adminApi(`/api/admin/rooms/${detail.room.id}/match`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          firstParticipantId: selectedParticipants[0],
-          secondParticipantId: selectedParticipants[1],
-        }),
-      });
-      setSelectedParticipants([]);
-      await Promise.all([loadRooms(true), loadDetail(detail.room.id, true)]);
-    } catch (matchError) {
-      setError(matchError instanceof Error ? matchError.message : "No se pudo guardar la pareja.");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  if (!status) {
-    return (
-      <main className={styles.centered}>
-        <LoaderCircle className={styles.spin} />
-        <p>{error || "Comprobando acceso seguro…"}</p>
-      </main>
-    );
-  }
-
-  if (!status.authenticated) {
-    return (
-      <main className={styles.authShell}>
-        <section className={styles.authCard}>
-          <div className={styles.adminMark}><ShieldCheck /></div>
-          <span className={styles.kicker}>Emparejao · acceso privado</span>
-          <h1>{status.setupRequired ? "Configura tu superadmin" : "Panel superadmin"}</h1>
-          <p>
-            {status.setupRequired
-              ? "Crea la contraseña que usarás para revisar las salas y resolver incidencias."
-              : "Entra para supervisar salas, participantes y parejas."}
-          </p>
-          {status.setupRequired && !status.setupConfigured && (
-            <div className={styles.warning}>
-              <AlertTriangle />
-              <span>Primero configura el secreto <strong>ADMIN_SETUP_TOKEN</strong> en Cloudflare.</span>
-            </div>
-          )}
-          <form className={styles.authForm} onSubmit={submitAccess}>
-            <label>
-              Correo del superadmin
-              <Input value={status.email} disabled />
-            </label>
-            {status.setupRequired && (
-              <label>
-                Clave inicial de configuración
-                <Input
-                  type="password"
-                  autoComplete="one-time-code"
-                  value={setupToken}
-                  onChange={(event) => setSetupToken(event.target.value)}
-                  required
-                />
-              </label>
-            )}
-            <label>
-              {status.setupRequired ? "Crea una contraseña" : "Contraseña"}
-              <Input
-                type="password"
-                autoComplete={status.setupRequired ? "new-password" : "current-password"}
-                minLength={8}
-                value={password}
-                onChange={(event) => setPassword(event.target.value)}
-                required
-              />
-            </label>
-            {status.setupRequired && (
-              <label>
-                Repite la contraseña
-                <Input
-                  type="password"
-                  autoComplete="new-password"
-                  minLength={8}
-                  value={passwordConfirmation}
-                  onChange={(event) => setPasswordConfirmation(event.target.value)}
-                  required
-                />
-              </label>
-            )}
-            {error && <p className={styles.formError} role="alert">{error}</p>}
-            <Button type="submit" disabled={busy || (status.setupRequired && !status.setupConfigured)}>
-              {busy ? <LoaderCircle className={styles.spin} /> : <ShieldCheck />}
-              {status.setupRequired ? "Crear acceso seguro" : "Entrar al panel"}
-            </Button>
-          </form>
-        </section>
-      </main>
-    );
-  }
-
-  const activeRooms = rooms.filter((room) => room.active).length;
-  const liveParticipants = rooms
-    .filter((room) => room.active)
-    .reduce((total, room) => total + room.participantCount, 0);
-  const roomHasIssues = detail?.room.status === ROOM_STATUS.DRAWN && detail.unmatched.length > 0;
-
-  return (
-    <main className={styles.dashboard}>
-      <header className={styles.header}>
-        <div>
-          <span className={styles.brand}><Ticket /> Emparejao</span>
-          <h1>Control de salas</h1>
-          <p>{status.email}</p>
-        </div>
-        <div className={styles.headerActions}>
-          <Button variant="outline" onClick={() => void loadRooms()} disabled={loadingRooms}>
-            <RefreshCw className={loadingRooms ? styles.spin : ""} /> Actualizar
-          </Button>
-          <Button variant="outline" onClick={() => void logout()} disabled={busy}>
-            <LogOut /> Salir
-          </Button>
-        </div>
-      </header>
-
-      <section className={styles.metrics}>
-        <article><DoorOpen /><div><strong>{activeRooms}</strong><span>salas activas</span></div></article>
-        <article><Users /><div><strong>{liveParticipants}</strong><span>personas activas</span></div></article>
-        <article><CheckCircle2 /><div><strong>{rooms.filter((room) => room.status === ROOM_STATUS.DRAWN).length}</strong><span>salas sorteadas</span></div></article>
-      </section>
-
-      {error && <div className={styles.globalError} role="alert"><AlertTriangle /> {error}</div>}
-
-      <section className={styles.workspace}>
-        <aside className={styles.roomsPanel}>
-          <div className={styles.panelHeading}>
-            <div><span>Últimas 100</span><h2>Salas creadas</h2></div>
-            <span className={styles.countPill}>{rooms.length}</span>
-          </div>
-          <div className={styles.roomList}>
-            {rooms.map((room) => (
-              <button
-                type="button"
-                key={room.id}
-                className={`${styles.roomButton} ${selectedRoomId === room.id ? styles.selectedRoom : ""}`}
-                onClick={() => setSelectedRoomId(room.id)}
-              >
-                <div>
-                  <strong>PIN {room.code}</strong>
-                  <span className={`${styles.statusDot} ${room.active ? styles.activeDot : ""}`}>
-                    {roomStatusLabel(room)}
-                  </span>
-                </div>
-                <p><Users /> {room.participantCount} de {room.expectedParticipants}</p>
-                <small>{dateTime(room.createdAt)}</small>
-              </button>
-            ))}
-            {!rooms.length && <p className={styles.empty}>Todavía no hay salas registradas.</p>}
-          </div>
-        </aside>
-
-        <section className={styles.detailPanel}>
-          {!detail ? (
-            <div className={styles.emptyDetail}><DoorOpen /><p>Selecciona una sala para ver su actividad.</p></div>
-          ) : (
-            <>
-              <div className={styles.detailHeader}>
-                <div>
-                  <span className={styles.kicker}>Sala {detail.room.code}</span>
-                  <h2>{detail.room.participantCount} participantes</h2>
-                  <p>Creada {dateTime(detail.room.createdAt)} · vence {dateTime(detail.room.expiresAt)}</p>
-                </div>
-                <span className={`${styles.roomState} ${detail.room.active ? styles.liveState : ""}`}>
-                  {roomStatusLabel(detail.room)}
-                </span>
-              </div>
-
-              {detail.room.status === ROOM_STATUS.LOBBY && (
-                <div className={styles.infoBanner}><Clock3 /> El grupo sigue entrando. Las parejas aparecerán cuando el host realice el sorteo.</div>
-              )}
-
-              {roomHasIssues && (
-                <section className={styles.issuePanel}>
-                  <div className={styles.issueHeading}>
-                    <AlertTriangle />
-                    <div><h3>{detail.unmatched.length} personas sin una pareja válida</h3><p>Selecciona exactamente dos para unirlas manualmente.</p></div>
-                  </div>
-                  <div className={styles.unmatchedGrid}>
-                    {detail.unmatched.map((participant) => (
-                      <button
-                        type="button"
-                        key={participant.id}
-                        className={`${styles.unmatchedPerson} ${selectedParticipants.includes(participant.id) ? styles.personSelected : ""}`}
-                        onClick={() => toggleParticipant(participant.id)}
-                      >
-                        <span>{participant.name.slice(0, 1).toUpperCase()}</span>
-                        <div><strong>{participant.name}</strong><small>Número: {participant.redNumber ?? "sin asignar"}</small></div>
-                        {selectedParticipants.includes(participant.id) && <CheckCircle2 />}
-                      </button>
-                    ))}
-                  </div>
-                  <Button disabled={busy || selectedParticipants.length !== 2} onClick={() => void matchSelected()}>
-                    {busy ? <LoaderCircle className={styles.spin} /> : <ArrowLeftRight />}
-                    Emparejar seleccionados
-                  </Button>
-                  {detail.unmatched.length === 1 && (
-                    <p className={styles.singleWarning}>Hay una sola persona libre. Para no romper otra pareja, utiliza “Cambiar parejas” desde el panel del host.</p>
-                  )}
-                </section>
-              )}
-
-              {detail.room.status === ROOM_STATUS.DRAWN && !roomHasIssues && (
-                <div className={styles.successBanner}><CheckCircle2 /> Todos tienen una pareja válida.</div>
-              )}
-
-              <div className={styles.sectionHeading}>
-                <div><span>Resultado</span><h3>Parejas agrupadas</h3></div>
-                <strong>{detail.pairs.length}</strong>
-              </div>
-              <div className={styles.pairGrid}>
-                {detail.pairs.map((pair) => (
-                  <article className={styles.pairCard} key={pair.id}>
-                    <div><span>#{pair.first.number}</span><strong>{pair.first.name}</strong></div>
-                    <ArrowLeftRight />
-                    <div><span>#{pair.second.number}</span><strong>{pair.second.name}</strong></div>
-                  </article>
-                ))}
-                {detail.room.status === ROOM_STATUS.DRAWN && !detail.pairs.length && (
-                  <p className={styles.empty}>Todavía no hay parejas válidas para mostrar.</p>
-                )}
-              </div>
-
-              <div className={styles.sectionHeading}>
-                <div><span>Registro en vivo</span><h3>Personas en la sala</h3></div>
-                <strong>{detail.participants.length}</strong>
-              </div>
-              <div className={styles.peopleTable}>
-                {detail.participants.map((participant, index) => (
-                  <div key={participant.id}>
-                    <span>{String(index + 1).padStart(2, "0")}</span>
-                    <strong>{participant.name}</strong>
-                    <small>{participant.redNumber === null ? "Esperando sorteo" : `Número ${participant.redNumber}`}</small>
-                  </div>
-                ))}
-                {!detail.participants.length && <p className={styles.empty}>Nadie ha entrado todavía.</p>}
-              </div>
-            </>
-          )}
-        </section>
-      </section>
-    </main>
-  );
+  return <main className={styles.dashboard}>
+    <header className={styles.header}><div><span className={styles.brand}><Ticket />Emparejao</span><h1>Control de salas</h1><p>{status.email}</p></div><div className={styles.headerActions}><Button variant="outline" onClick={() => void loadRooms()} disabled={loadingRooms}><RefreshCw className={loadingRooms ? styles.spin : ""} />Actualizar</Button><label className={styles.exportControl}><select value={exportKind} onChange={(event) => setExportKind(event.target.value as ExportKind)} aria-label="Tipo de CSV"><option value={EXPORT_KIND.ROOMS}>Salas</option><option value={EXPORT_KIND.PARTICIPANTS}>Personas</option><option value={EXPORT_KIND.PAIRS}>Parejas</option></select><Button variant="outline" onClick={() => void downloadCsv()} disabled={busy}><Download />CSV</Button></label><Button variant="outline" onClick={() => void logout()} disabled={busy}><LogOut />Salir</Button></div></header>
+    {status.setupConfigured && securityWarningVisible && <div className={styles.setupWarning} role="alert"><AlertTriangle /><span><strong>Acción de seguridad:</strong> Elimina ADMIN_SETUP_TOKEN de Cloudflare después de verificar tu acceso.</span><button type="button" onClick={() => setSecurityWarningVisible(false)} aria-label="Cerrar aviso">×</button></div>}
+    <section className={styles.metrics}><article><DoorOpen /><div><strong>{activeRooms}</strong><span>salas activas</span></div></article><article><Users /><div><strong>{liveParticipants}</strong><span>personas activas</span></div></article><article><CircleAlert /><div><strong>{alertCount}</strong><span>alertas en esta sala</span></div></article></section>
+    {error && <div className={styles.globalError} role="alert"><AlertTriangle />{error}</div>}{notice && <div className={styles.successBanner} role="status"><CheckCircle2 />{notice}<button type="button" onClick={() => setNotice("")} aria-label="Cerrar aviso">×</button></div>}
+    <section className={styles.workspace}><aside className={styles.roomsPanel}><div className={styles.panelHeading}><div><span>Supervisión</span><h2>Salas</h2></div><span className={styles.countPill}>{filteredRooms.length}</span></div><div className={styles.roomFilters}><label className={styles.searchField}><Search /><Input value={roomSearch} onChange={(event) => setRoomSearch(event.target.value)} placeholder="PIN o estado" /></label><div className={styles.filterRow}><label><span>Estado</span><select value={roomFilter} onChange={(event) => setRoomFilter(event.target.value as RoomFilter)}>{Object.entries(ROOM_FILTER).map(([label, value]) => <option value={value} key={value}>{label.toLowerCase()}</option>)}</select><ChevronDown /></label><Input aria-label="Filtrar salas por fecha" type="date" value={roomDate} onChange={(event) => setRoomDate(event.target.value)} /></div></div><div className={styles.roomList}>{filteredRooms.map((room) => <button type="button" key={room.id} className={`${styles.roomButton} ${selectedRoomId === room.id ? styles.selectedRoom : ""}`} onClick={() => setSelectedRoomId(room.id)}><div><strong>PIN {room.code}</strong><span className={`${styles.statusDot} ${room.active ? styles.activeDot : ""}`}>{roomStatusLabel(room)}</span></div><p><Users />{room.participantCount} de {room.expectedParticipants}{room.joinLocked && <LockKeyhole />}</p><small>{dateTime(room.createdAt)}</small></button>)}{!filteredRooms.length && <p className={styles.empty}>No hay salas con esos filtros.</p>}</div></aside>
+    <section className={styles.detailPanel}>{!detail ? <div className={styles.emptyDetail}><DoorOpen /><p>Selecciona una sala para ver su actividad.</p></div> : <>
+      <div className={styles.detailHeader}><div><span className={styles.kicker}>Sala {detail.room.code}</span><h2>{detail.room.participantCount} participantes</h2><p>Creada {dateTime(detail.room.createdAt)} · vence {dateTime(detail.room.expiresAt)}</p></div><span className={`${styles.roomState} ${detail.room.active ? styles.liveState : ""}`}>{roomStatusLabel(detail.room)}</span></div>
+      <div className={styles.roomControls}><Button variant="outline" disabled={busy} onClick={() => setConfirmation({ kind: CONFIRMATION_KIND.ROOM_ACTION, roomAction: ROOM_ACTION.EXTEND, title: "Extender vencimiento", description: "La sala tendrá 24 horas adicionales de vigencia." })}><Clock3 />+24 h</Button><Button variant="outline" disabled={busy} onClick={() => void roomAction(detail.room.joinLocked ? ROOM_ACTION.UNLOCK : ROOM_ACTION.LOCK)}>{detail.room.joinLocked ? <UnlockKeyhole /> : <LockKeyhole />}{detail.room.joinLocked ? "Abrir entradas" : "Bloquear entradas"}</Button><Button variant="outline" disabled={busy} onClick={() => setConfirmation({ kind: CONFIRMATION_KIND.ROOM_ACTION, roomAction: ROOM_ACTION.RESET_DRAW, title: "Reiniciar sorteo", description: "Se eliminarán las parejas actuales y la sala volverá a requerir un sorteo." })}><RotateCcw />Reiniciar</Button><Button variant="outline" disabled={busy} onClick={() => setConfirmation({ kind: CONFIRMATION_KIND.ROOM_ACTION, roomAction: ROOM_ACTION.REDRAW, title: "Volver a sortear", description: "Se generarán nuevas parejas para todas las personas elegibles." })}><ArrowLeftRight />Resortear</Button><Button variant="outline" disabled={busy} onClick={() => setConfirmation({ kind: CONFIRMATION_KIND.ROOM_ACTION, roomAction: ROOM_ACTION.ARCHIVE, title: "Archivar sala", description: "La sala dejará de aparecer como operativa. El historial se conservará." })}><Archive />Archivar</Button></div>
+      {detail.room.status === ROOM_STATUS.LOBBY && <div className={styles.infoBanner}><Clock3 />El grupo sigue entrando. Las parejas aparecerán cuando el host realice el sorteo.{detail.presenceSource ? ` Presencia: ${detail.presenceSource}.` : ""}</div>}
+      {alertCount > 0 && <section className={styles.issuePanel}><div className={styles.issueHeading}><AlertTriangle /><div><h3>{alertCount} alertas a revisar</h3><p>Estas señales no bloquean el panel; prioriza las personas sin pareja, desconectadas o sin resultado.</p></div></div><div className={styles.alertGrid}>{detail.unmatched.length > 0 && <div><UserRoundX /><strong>{detail.unmatched.length} sin pareja</strong><span>Empareja manualmente abajo.</span></div>}{duplicateNames.length > 0 && <div><CircleAlert /><strong>{duplicateNames.length} nombres duplicados</strong><span>Revisa identidad antes de sortear.</span></div>}{duplicateNumbers.length > 0 && <div><CircleAlert /><strong>{duplicateNumbers.length} números duplicados</strong><span>Verifica el número rojo.</span></div>}{disconnected.length > 0 && <div><WifiOff /><strong>{disconnected.length} desconectados</strong><span>Última actividad: {dateTime(disconnected[0]?.lastSeenAt)}</span></div>}{unviewed.length > 0 && <div><Clock3 /><strong>{unviewed.length} no vieron resultado</strong><span>Reenvía la notificación.</span></div>}{notificationsOff.length > 0 && <div><BellOff /><strong>{notificationsOff.length} sin notificaciones</strong><span>No recibirán el resultado push.</span></div>}{unconfirmed.length > 0 && <div><UserRoundX /><strong>{unconfirmed.length} sin confirmar</strong><span>La pareja sigue pendiente.</span></div>}{detail.alerts?.joinsLocked && <div><LockKeyhole /><strong>Entradas bloqueadas</strong><span>Las nuevas personas no pueden unirse.</span></div>}{detail.alerts?.expired && <div><Clock3 /><strong>Sala vencida</strong><span>Extiende su vencimiento para reactivarla.</span></div>}{detail.alerts?.participantShortfall ? <div><Users /><strong>{detail.alerts.participantShortfall} plazas vacantes</strong><span>Faltan personas para el cupo esperado.</span></div> : null}</div>
+      {detail.unmatched.length > 0 && <><div className={styles.unmatchedGrid}>{detail.unmatched.map((participant) => <button type="button" key={participant.id} className={`${styles.unmatchedPerson} ${selectedParticipants.includes(participant.id) ? styles.personSelected : ""}`} onClick={() => toggleParticipant(participant.id)}><span>{participant.name.slice(0, 1).toUpperCase()}</span><div><strong>{participant.name}</strong><small>Número: {participant.redNumber ?? "sin asignar"}</small></div>{selectedParticipants.includes(participant.id) && <CheckCircle2 />}</button>)}</div><Button disabled={busy || selectedParticipants.length !== 2} onClick={() => void matchSelected()}>{busy ? <LoaderCircle className={styles.spin} /> : <ArrowLeftRight />}Emparejar seleccionados</Button></>}</section>}
+      {detail.room.status === ROOM_STATUS.DRAWN && !detail.unmatched.length && <div className={styles.successBanner}><CheckCircle2 />No hay personas sin pareja. Revisa las alertas de entrega y confirmación.</div>}
+      <div className={styles.sectionHeading}><div><span>Resultado</span><h3>Parejas agrupadas</h3></div><strong>{filteredPairs.length}</strong></div><label className={styles.searchField}><Search /><Input value={personSearch} onChange={(event) => setPersonSearch(event.target.value)} placeholder="Buscar nombre o número" /></label><div className={styles.pairGrid}>{filteredPairs.map((pair) => <article className={styles.pairCard} key={pair.id}><div><span>#{pair.first.number}</span><strong>{pair.first.name}</strong></div><ArrowLeftRight /><div><span>#{pair.second.number}</span><strong>{pair.second.name}</strong></div></article>)}{detail.room.status === ROOM_STATUS.DRAWN && !filteredPairs.length && <p className={styles.empty}>No hay parejas que coincidan con la búsqueda.</p>}</div>
+      <div className={styles.sectionHeading}><div><span>Registro en vivo</span><h3>Personas en la sala</h3></div><strong>{filteredParticipants.length}</strong></div><div className={styles.peopleTable}><div className={styles.peopleHeader}><span>#</span><span>Persona</span><span>Estado</span><span>Acciones</span></div>{filteredParticipants.map((participant, index) => <article key={participant.id} className={styles.personRow}><span>{String(index + 1).padStart(2, "0")}</span><div>{editingParticipantId === participant.id ? <form className={styles.renameForm} onSubmit={(event) => { event.preventDefault(); void updateParticipantName(participant.id); }}><Input value={editingName} onChange={(event) => setEditingName(event.target.value)} autoFocus /><Button type="submit" size="sm" disabled={busy}>Guardar</Button><button type="button" onClick={() => setEditingParticipantId("")}>Cancelar</button></form> : <><strong>{participant.name}</strong><small>#{participant.redNumber ?? "—"} · entró {dateTime(participant.joinedAt)}</small></>}</div><div className={styles.statusTags}><span className={participant.online === false ? styles.badTag : styles.goodTag}>{participant.online === false ? "desconectado" : "conectado"}</span><span className={styles.neutralTag}>visto {dateTime(participant.lastSeenAt)}</span><span className={participant.resultViewedAt ? styles.goodTag : styles.neutralTag}>{participant.resultViewedAt ? "vio resultado" : "sin ver"}</span><span className={participant.notificationEnabled === false ? styles.badTag : styles.goodTag}>{participant.notificationEnabled === false ? "push off" : "push on"}</span><span className={participant.pairConfirmedAt ? styles.goodTag : styles.neutralTag}>{participant.pairConfirmedAt ? "confirmó" : "sin confirmar"}</span></div><div className={styles.personActions}><button type="button" aria-label={`Renombrar a ${participant.name}`} onClick={() => { setEditingParticipantId(participant.id); setEditingName(participant.name); }}><Pencil /></button><button type="button" aria-label={`Reenviar resultado a ${participant.name}`} disabled={busy} onClick={() => void participantAction(participant.id, PARTICIPANT_ACTION.RESEND_RESULT)}><Send /></button><button type="button" aria-label={participant.pairConfirmedAt ? `Reiniciar confirmación de ${participant.name}` : `Confirmar pareja de ${participant.name}`} disabled={busy} onClick={() => void participantAction(participant.id, participant.pairConfirmedAt ? PARTICIPANT_ACTION.RESET_CONFIRMATION : PARTICIPANT_ACTION.CONFIRM_PAIR)}><CheckCircle2 /></button><button type="button" aria-label={`Eliminar a ${participant.name}`} disabled={busy} onClick={() => setConfirmation({ kind: CONFIRMATION_KIND.PARTICIPANT_DELETE, participantId: participant.id, title: `Eliminar a ${participant.name}`, description: "Esta persona saldrá de la sala y sus parejas podrían requerir una revisión manual." })}><Trash2 /></button></div></article>)}{!filteredParticipants.length && <p className={styles.empty}>Nadie coincide con la búsqueda.</p>}</div>
+      <section className={styles.adminTools}><div className={styles.sectionHeading}><div><span>Seguridad y trazabilidad</span><h3>Administración</h3></div></div><div className={styles.toolsGrid}><form className={styles.securityCard} onSubmit={changePassword}><KeyRound /><h4>Cambiar contraseña</h4><Input type="password" autoComplete="current-password" placeholder="Contraseña actual" value={currentPassword} onChange={(event) => setCurrentPassword(event.target.value)} required /><Input type="password" autoComplete="new-password" minLength={8} placeholder="Nueva contraseña" value={newPassword} onChange={(event) => setNewPassword(event.target.value)} required /><Button type="submit" disabled={busy}>Actualizar clave</Button></form><div className={styles.securityCard}><ShieldCheck /><h4>Sesiones activas</h4><p>Revoca los accesos de otros navegadores si detectas actividad extraña.</p><Button variant="outline" disabled={busy} onClick={() => setConfirmation({ kind: CONFIRMATION_KIND.REVOKE_SESSIONS, title: "Revocar otras sesiones", description: "Los demás navegadores tendrán que iniciar sesión de nuevo. Esta sesión seguirá activa." })}>Revocar sesiones</Button></div><div className={styles.securityCard}><History /><h4>Historial de auditoría</h4><p>Consulta cambios administrativos y acciones de supervisión.</p><Button variant="outline" onClick={() => void loadAudit()} disabled={busy}>Ver historial</Button></div></div>{auditOpen && <div className={styles.auditList}>{auditEntries.map((entry, index) => <article key={entry.id ?? `${entry.action}-${index}`}><strong>{entry.action ?? "Acción administrativa"}</strong><span>{entry.details ?? entry.roomCode ?? "Sin detalle"}</span><small>{dateTime(entry.createdAt)}</small></article>)}{!auditEntries.length && <p className={styles.empty}>No hay eventos de auditoría disponibles.</p>}</div>}</section>
+    </>}</section></section>
+    {confirmation && <div className={styles.confirmBackdrop} role="presentation"><section className={styles.confirmDialog} role="alertdialog" aria-modal="true" aria-labelledby="confirmation-title"><AlertTriangle /><h3 id="confirmation-title">{confirmation.title}</h3><p>{confirmation.description}</p><div><Button variant="outline" onClick={() => setConfirmation(null)}>Cancelar</Button><Button disabled={busy} onClick={() => void confirmAction()}>Confirmar acción</Button></div></section></div>}
+  </main>;
 }

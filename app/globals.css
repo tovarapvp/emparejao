@@ -446,6 +446,10 @@ footer p { color: #716b62; margin: 0; }
 .match-target.blue { border-left: 12px solid #86a4ff; }
 .privacy-note { align-items: center; display: inline-flex; font-size: .84rem; gap: 7px; margin-top: 30px; }
 .privacy-note svg { background: #2bbf6b; border-radius: 50%; height: 19px; padding: 4px; width: 19px; }
+.pair-confirm-button { background: #ffe14a; border: 2px solid #151515; box-shadow: 4px 4px 0 #151515; color: #151515; margin: 26px auto 0; }
+.pair-confirmed { align-items: center; background: #e9fff1; border: 2px solid #151515; border-radius: 999px; box-shadow: 4px 4px 0 #151515; color: #151515; display: flex; font-size: .9rem; font-weight: 800; gap: 8px; margin: 26px auto 0; padding: 10px 16px; width: fit-content; }
+.pair-confirmed svg { color: #169b50; height: 18px; width: 18px; }
+.light-error { color: #fff; margin-top: 18px; }
 .support-cta { align-items: center; background: #fffdf8; border: 2px solid #151515; border-radius: 18px; bottom: 22px; box-shadow: 6px 6px 0 #151515; color: #151515; display: flex; max-width: 330px; padding: 12px 18px; position: fixed; right: 22px; text-align: left; text-decoration: none; transition: transform .2s ease, box-shadow .2s ease; z-index: 50; }
 .support-cta:hover { box-shadow: 4px 4px 0 #151515; transform: translate(3px, 3px); }
 .support-copy { display: flex; flex-direction: column; min-width: 0; }

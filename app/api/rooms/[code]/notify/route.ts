@@ -19,7 +19,7 @@ export async function POST(request: Request, context: RouteContext) {
     const room = await database
       .prepare(
         `SELECT id, code, host_token, expected_participants, status, expires_at, version
-         FROM rooms WHERE code = ? AND expires_at > ? LIMIT 1`,
+         FROM rooms WHERE code = ? AND expires_at > ? AND archived_at IS NULL LIMIT 1`,
       )
       .bind(code, Date.now())
       .first<RoomRecord>();

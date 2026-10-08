@@ -16,6 +16,7 @@ type SocketRole = (typeof SOCKET_ROLE)[keyof typeof SOCKET_ROLE];
 interface BroadcastRequest {
   event: RoomEvent;
   target: RoomEventTarget;
+  participantId?: string;
 }
 
 interface SocketAccessRecord {
@@ -24,6 +25,11 @@ interface SocketAccessRecord {
   status: string;
   expected_participants: number;
   version: number;
+}
+
+interface SocketAttachment {
+  role: SocketRole;
+  participantId: string | null;
 }
 
 function requestedProtocols(request: Request) {
@@ -37,6 +43,7 @@ function isBroadcastRequest(value: unknown): value is BroadcastRequest {
   if (!value || typeof value !== "object") return false;
   const request = value as Record<string, unknown>;
   const event = request.event;
+  const participantId = request.participantId;
   return (
     (request.target === ROOM_EVENT_TARGET.HOST ||
       request.target === ROOM_EVENT_TARGET.PARTICIPANT ||
@@ -44,16 +51,36 @@ function isBroadcastRequest(value: unknown): value is BroadcastRequest {
     typeof event === "object" &&
     event !== null &&
     "type" in event &&
-    (event.type === "room_updated" || event.type === "draw_started")
+    (event.type === "room_updated" || event.type === "draw_started") &&
+    (participantId === undefined || typeof participantId === "string")
   );
+}
+
+function socketAttachment(value: unknown): SocketAttachment | null {
+  if (!value || typeof value !== "object") return null;
+  const attachment = value as Record<string, unknown>;
+  if (
+    (attachment.role !== SOCKET_ROLE.HOST && attachment.role !== SOCKET_ROLE.PARTICIPANT) ||
+    (attachment.participantId !== null && typeof attachment.participantId !== "string")
+  ) {
+    return null;
+  }
+  return {
+    role: attachment.role,
+    participantId: attachment.participantId,
+  };
 }
 
 export class RoomHub extends DurableObject<Cloudflare.Env> {
   private pendingParticipantCount: number | null = null;
   private roomUpdateTimer: ReturnType<typeof setTimeout> | undefined;
+  private lastPresenceWriteByParticipant = new Map<string, number>();
 
   async fetch(request: Request) {
     const url = new URL(request.url);
+    if (url.pathname === "/presence" && request.method === "GET") {
+      return this.presence();
+    }
     if (url.pathname === "/broadcast" && request.method === "POST") {
       return this.broadcast(request);
     }
@@ -80,7 +107,7 @@ export class RoomHub extends DurableObject<Cloudflare.Env> {
                 p.id AS participant_id
          FROM rooms r
          LEFT JOIN participants p ON p.room_id = r.id AND p.access_token = ?
-         WHERE r.code = ? AND r.expires_at > ? LIMIT 1`,
+         WHERE r.code = ? AND r.expires_at > ? AND r.archived_at IS NULL LIMIT 1`,
       )
       .bind(token, roomCode, Date.now())
       .first<SocketAccessRecord>();
@@ -97,7 +124,10 @@ export class RoomHub extends DurableObject<Cloudflare.Env> {
     const pair = new WebSocketPair();
     const [client, server] = Object.values(pair);
     this.ctx.acceptWebSocket(server, [role]);
-    server.serializeAttachment({ role });
+    server.serializeAttachment({ role, participantId: access.participant_id });
+    if (access.participant_id) {
+      await this.markParticipantSeen(access.participant_id);
+    }
     server.send(JSON.stringify({
       type: "room_snapshot",
       participantCount:
@@ -141,16 +171,31 @@ export class RoomHub extends DurableObject<Cloudflare.Env> {
       return Response.json({ queued: true });
     }
 
-    const delivered = this.sendToSockets(body.event, body.target);
+    const delivered = this.sendToSockets(body.event, body.target, body.participantId);
     return Response.json({ delivered });
   }
 
-  private sendToSockets(event: RoomEvent, target: RoomEventTarget) {
+  private presence() {
+    const participantIds = new Set<string>();
+    for (const socket of this.ctx.getWebSockets(SOCKET_ROLE.PARTICIPANT)) {
+      const attachment = socketAttachment(socket.deserializeAttachment());
+      if (attachment?.participantId) participantIds.add(attachment.participantId);
+    }
+    return Response.json({ participantIds: [...participantIds] });
+  }
+
+  private sendToSockets(
+    event: RoomEvent,
+    target: RoomEventTarget,
+    participantId?: string,
+  ) {
     const sockets = target === ROOM_EVENT_TARGET.ALL
       ? this.ctx.getWebSockets()
       : this.ctx.getWebSockets(target);
     const payload = JSON.stringify(event);
     for (const socket of sockets) {
+      const attachment = socketAttachment(socket.deserializeAttachment());
+      if (participantId && attachment?.participantId !== participantId) continue;
       try {
         socket.send(payload);
       } catch {
@@ -161,6 +206,34 @@ export class RoomHub extends DurableObject<Cloudflare.Env> {
   }
 
   webSocketMessage(socket: WebSocket, message: ArrayBuffer | string) {
+    const attachment = socketAttachment(socket.deserializeAttachment());
+    if (attachment?.participantId) {
+      void this.markParticipantSeen(attachment.participantId);
+    }
     if (message === "ping") socket.send("pong");
+  }
+
+  webSocketClose(socket: WebSocket) {
+    const attachment = socketAttachment(socket.deserializeAttachment());
+    if (attachment?.participantId) {
+      void this.markParticipantSeen(attachment.participantId, true);
+    }
+  }
+
+  private async markParticipantSeen(participantId: string, force = false) {
+    const database = this.env.DB;
+    if (!database) return;
+    const now = Date.now();
+    const lastWrittenAt = this.lastPresenceWriteByParticipant.get(participantId);
+    if (!force && lastWrittenAt !== undefined && now - lastWrittenAt < 5 * 60_000) return;
+    this.lastPresenceWriteByParticipant.set(participantId, now);
+    await database
+      .prepare(
+        `UPDATE participants
+         SET last_seen_at = ?
+         WHERE id = ? AND (last_seen_at IS NULL OR last_seen_at < ?)`,
+      )
+      .bind(now, participantId, now - 5 * 60_000)
+      .run();
   }
 }

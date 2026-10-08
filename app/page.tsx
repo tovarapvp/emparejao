@@ -128,6 +128,9 @@ const ES_COPY = {
   yourNumber: "Tu número",
   yourMatch: "Busca",
   privateCard: "Solo tú puedes ver esta tarjeta",
+  confirmPair: "Ya encontré a mi pareja",
+  pairConfirmed: "Pareja encontrada y confirmada",
+  confirmPairFailed: "No pudimos confirmar tu pareja.",
   inside: "Ya estás dentro",
   hello: "Hola",
   participant: "participante",
@@ -262,6 +265,9 @@ const EN_COPY: Record<TranslationKey, string> = {
   yourNumber: "Your number",
   yourMatch: "Find",
   privateCard: "Only you can see this card",
+  confirmPair: "I found my match",
+  pairConfirmed: "Match found and confirmed",
+  confirmPairFailed: "We couldn’t confirm your match.",
   inside: "You’re in",
   hello: "Hi",
   participant: "participant",
@@ -360,6 +366,8 @@ const EN_SERVER_ERRORS: Record<string, string> = {
   "No pudimos crear el PIN. Intenta de nuevo.": "We couldn’t create the PIN. Try again.",
   "Solo el organizador puede enviar los avisos.": "Only the host can send notifications.",
   "El sorteo todavía no ha comenzado.": "The draw has not started yet.",
+  "El organizador cerró las entradas a esta sala.": "The host has closed entry to this room.",
+  "Estado de participante inválido.": "Invalid participant status.",
   "La suscripción push no es válida.": "The push subscription is invalid.",
   "Los avisos push aún no están configurados en este servidor.": "Push notifications are not configured on this server yet.",
   "El servicio de salas no está disponible.": "The room service is unavailable.",
@@ -405,6 +413,7 @@ interface ParticipantRoom {
   expectedParticipants: number;
   participantCount: number;
   result: DrawResult | null;
+  pairConfirmedAt: number | null;
 }
 
 interface BrowserNotificationMessage {
@@ -683,6 +692,7 @@ export default function Home() {
   const [pushSubscribed, setPushSubscribed] = useState(false);
   const [roomRefreshSignal, setRoomRefreshSignal] = useState(0);
   const [socketConnected, setSocketConnected] = useState(false);
+  const resultViewedKeyRef = useRef("");
   const copy = COPY[language];
 
   useEffect(() => {
@@ -818,6 +828,7 @@ export default function Home() {
     let active = true;
     let socket: WebSocket | null = null;
     let retryTimer: ReturnType<typeof setTimeout> | undefined;
+    let heartbeatTimer: ReturnType<typeof setInterval> | undefined;
     let retryAttempt = 0;
 
     function scheduleReconnect() {
@@ -845,6 +856,10 @@ export default function Home() {
         if (!active) return;
         retryAttempt = 0;
         setSocketConnected(true);
+        if (heartbeatTimer) clearInterval(heartbeatTimer);
+        heartbeatTimer = setInterval(() => {
+          if (socket?.readyState === WebSocket.OPEN) socket.send("ping");
+        }, 30_000);
       });
       socket.addEventListener("message", (event) => {
         if (!active || typeof event.data !== "string") return;
@@ -873,6 +888,8 @@ export default function Home() {
       });
       socket.addEventListener("close", () => {
         if (!active) return;
+        if (heartbeatTimer) clearInterval(heartbeatTimer);
+        heartbeatTimer = undefined;
         setSocketConnected(false);
         scheduleReconnect();
       });
@@ -889,6 +906,7 @@ export default function Home() {
     return () => {
       active = false;
       if (retryTimer) clearTimeout(retryTimer);
+      if (heartbeatTimer) clearInterval(heartbeatTimer);
       document.removeEventListener("visibilitychange", reconnectWhenAvailable);
       window.removeEventListener("online", reconnectWhenAvailable);
       socket?.close(1000, "Vista cerrada");
@@ -978,6 +996,27 @@ export default function Home() {
       window.removeEventListener("online", refreshNow);
     };
   }, [session, roomRefreshSignal, socketConnected]);
+
+  useEffect(() => {
+    if (!session || session.role !== "participant" || !participantRoom?.result) return;
+    const viewedKey = [
+      session.code,
+      participantRoom.result.redNumber,
+      participantRoom.result.blueNumber,
+    ].join(":");
+    if (resultViewedKeyRef.current === viewedKey) return;
+    resultViewedKeyRef.current = viewedKey;
+    void api(`/api/rooms/${session.code}/participant-status`, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${session.token}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ action: "result_viewed" }),
+    }).catch(() => {
+      resultViewedKeyRef.current = "";
+    });
+  }, [participantRoom?.result, session]);
 
   useEffect(() => {
     const context = document.modelContext;
@@ -1198,6 +1237,32 @@ export default function Home() {
     if (!displayed) setError(copy.browserNotificationFailed);
   }
 
+  async function confirmPair() {
+    if (!session || session.role !== "participant") return;
+    setBusy(true);
+    setError("");
+    try {
+      const response = await api<{ pairConfirmedAt: number }>(
+        `/api/rooms/${session.code}/participant-status`,
+        {
+          method: "POST",
+          headers: {
+            authorization: `Bearer ${session.token}`,
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({ action: "confirm_pair" }),
+        },
+      );
+      setParticipantRoom((current) => current
+        ? { ...current, pairConfirmedAt: response.pairConfirmedAt }
+        : current);
+    } catch (confirmError) {
+      setError(errorMessage(confirmError, copy.confirmPairFailed, language));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   const participantCount = hostRoom?.participants.length ?? 0;
   const roomFull = Boolean(hostRoom && participantCount === hostRoom.expectedParticipants);
   const canCloseEarly = Boolean(
@@ -1405,7 +1470,21 @@ export default function Home() {
                 <strong>{result.blueNumber}</strong>
                 <small>{ownsRed ? copy.blue : copy.red}</small>
               </div>
+              {participantRoom?.pairConfirmedAt ? (
+                <div className="pair-confirmed"><Check /> {copy.pairConfirmed}</div>
+              ) : (
+                <Button
+                  className="pair-confirm-button"
+                  type="button"
+                  disabled={busy}
+                  onClick={() => void confirmPair()}
+                >
+                  {busy ? <LoaderCircle className="spin" /> : <Check />}
+                  {copy.confirmPair}
+                </Button>
+              )}
               <div className="privacy-note"><Check /> {copy.privateCard}</div>
+              {error && <p className="form-error light-error" role="alert">{error}</p>}
             </div>
           ) : (
             <div className="waiting-card">

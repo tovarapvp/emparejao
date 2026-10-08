@@ -25,8 +25,9 @@ export async function POST(request: Request, context: RouteContext) {
     const database = getRawDb();
     const room = await database
       .prepare(
-        `SELECT id, code, host_token, expected_participants, status, expires_at, version
-         FROM rooms WHERE code = ? AND expires_at > ? LIMIT 1`,
+        `SELECT id, code, host_token, expected_participants, status, expires_at, version,
+                join_locked, archived_at
+         FROM rooms WHERE code = ? AND expires_at > ? AND archived_at IS NULL LIMIT 1`,
       )
       .bind(code, Date.now())
       .first<RoomRecord>();
@@ -37,6 +38,9 @@ export async function POST(request: Request, context: RouteContext) {
     if (room.status !== "lobby") {
       return Response.json({ error: "El sorteo de esta sala ya comenzó." }, { status: 409 });
     }
+    if (room.join_locked || room.archived_at) {
+      return Response.json({ error: "El organizador cerró las entradas a esta sala." }, { status: 409 });
+    }
 
     const participantId = crypto.randomUUID();
     const participantToken = `${crypto.randomUUID()}${crypto.randomUUID()}`;
@@ -46,6 +50,8 @@ export async function POST(request: Request, context: RouteContext) {
           `INSERT INTO participants (id, room_id, name, access_token, joined_at)
            SELECT ?, ?, ?, ?, ?
            WHERE (SELECT status FROM rooms WHERE id = ?) = 'lobby'
+             AND (SELECT join_locked FROM rooms WHERE id = ?) = 0
+             AND (SELECT archived_at FROM rooms WHERE id = ?) IS NULL
              AND (SELECT COUNT(*) FROM participants WHERE room_id = ?) < ?
              AND NOT EXISTS (
                SELECT 1 FROM participants WHERE room_id = ? AND lower(name) = lower(?)
@@ -57,6 +63,8 @@ export async function POST(request: Request, context: RouteContext) {
           name,
           participantToken,
           Date.now(),
+          room.id,
+          room.id,
           room.id,
           room.id,
           room.expected_participants,

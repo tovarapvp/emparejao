@@ -21,6 +21,14 @@ export interface AdminIdentity {
   sessionId: string;
 }
 
+export const ADMIN_AUDIT_ACTION = {
+  PASSWORD_CHANGED: "password_changed",
+  SESSIONS_REVOKED: "sessions_revoked",
+} as const;
+
+export type AdminAuditAction =
+  (typeof ADMIN_AUDIT_ACTION)[keyof typeof ADMIN_AUDIT_ACTION];
+
 function bytesToBase64Url(bytes: Uint8Array) {
   let binary = "";
   for (const byte of bytes) binary += String.fromCharCode(byte);

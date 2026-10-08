@@ -16,6 +16,8 @@ export interface RoomRecord {
   status: RoomStatus;
   expires_at: number;
   version: number;
+  join_locked?: number;
+  archived_at?: number | null;
 }
 
 export interface ParticipantRecord {
@@ -25,6 +27,10 @@ export interface ParticipantRecord {
   red_number: number | null;
   blue_number: number | null;
   joined_at: number;
+  last_seen_at?: number | null;
+  result_viewed_at?: number | null;
+  notification_enabled?: number;
+  pair_confirmed_at?: number | null;
 }
 
 export function normalizeCode(value: string) {

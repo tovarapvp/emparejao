@@ -16,6 +16,7 @@ interface MatchRoomRecord {
   code: string;
   status: string;
   expires_at: number;
+  archived_at: number | null;
 }
 
 interface MatchParticipantRecord {
@@ -52,7 +53,7 @@ export async function POST(request: Request, context: RouteContext) {
 
     const [room, roster] = await Promise.all([
       database
-        .prepare("SELECT id, code, status, expires_at FROM rooms WHERE id = ? LIMIT 1")
+        .prepare("SELECT id, code, status, expires_at, archived_at FROM rooms WHERE id = ? LIMIT 1")
         .bind(roomId)
         .first<MatchRoomRecord>(),
       database
@@ -64,6 +65,9 @@ export async function POST(request: Request, context: RouteContext) {
         .all<MatchParticipantRecord>(),
     ]);
     if (!room) return Response.json({ error: "La sala no existe." }, { status: 404 });
+    if (room.archived_at !== null) {
+      return Response.json({ error: "La sala archivada no puede modificarse." }, { status: 409 });
+    }
     if (room.expires_at <= Date.now()) {
       return Response.json({ error: "La sala ya venció y no puede modificarse." }, { status: 409 });
     }
@@ -134,10 +138,18 @@ export async function POST(request: Request, context: RouteContext) {
 
     await database.batch([
       database
-        .prepare("UPDATE participants SET red_number = ?, blue_number = ? WHERE id = ? AND room_id = ?")
+        .prepare(
+          `UPDATE participants
+           SET red_number = ?, blue_number = ?, result_viewed_at = NULL, pair_confirmed_at = NULL
+           WHERE id = ? AND room_id = ?`,
+        )
         .bind(firstNumber, secondNumber, first.id, room.id),
       database
-        .prepare("UPDATE participants SET red_number = ?, blue_number = ? WHERE id = ? AND room_id = ?")
+        .prepare(
+          `UPDATE participants
+           SET red_number = ?, blue_number = ?, result_viewed_at = NULL, pair_confirmed_at = NULL
+           WHERE id = ? AND room_id = ?`,
+        )
         .bind(secondNumber, firstNumber, second.id, room.id),
       database
         .prepare("UPDATE rooms SET status = 'drawn', version = version + 1 WHERE id = ?")
