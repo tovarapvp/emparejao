@@ -6,10 +6,13 @@ declare namespace Cloudflare {
     ROOM_JOIN_LIMITER?: RateLimit;
     ROOM_SOCKET_LIMITER?: RateLimit;
     ALERT_LIMITER?: RateLimit;
+    ADMIN_LOGIN_LIMITER?: RateLimit;
     BUCKET?: R2Bucket;
     ALERT_WEBHOOK_URL?: string;
     VAPID_PUBLIC_KEY?: string;
     VAPID_PRIVATE_KEY?: string;
     VAPID_SUBJECT?: string;
+    SUPER_ADMIN_EMAIL?: string;
+    ADMIN_SETUP_TOKEN?: string;
   }
 }

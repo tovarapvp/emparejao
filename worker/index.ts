@@ -10,6 +10,7 @@ export { RoomHub } from "./room-hub";
 
 const SOCKET_ROUTE = /^\/api\/rooms\/(\d{6})\/socket$/;
 const JOIN_ROUTE = /^\/api\/rooms\/(\d{6})\/join$/;
+const ADMIN_AUTH_ROUTE = /^\/api\/admin\/(?:login|setup)\/?$/;
 
 function clientKey(request: Request) {
   return (
@@ -46,6 +47,15 @@ async function handleFetch(
       env.ROOM_CREATE_LIMITER,
       `create:${clientKey(request)}`,
       "room_create",
+    );
+    if (limited) return limited;
+  }
+
+  if (request.method === "POST" && ADMIN_AUTH_ROUTE.test(url.pathname)) {
+    const limited = await enforceRateLimit(
+      env.ADMIN_LOGIN_LIMITER,
+      `admin:${clientKey(request)}`,
+      "admin_auth",
     );
     if (limited) return limited;
   }

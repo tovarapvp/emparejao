@@ -54,6 +54,9 @@ export async function runScheduledCleanup(env: Cloudflare.Env) {
   const startedAt = Date.now();
 
   try {
+    await env.DB.prepare("DELETE FROM admin_sessions WHERE expires_at <= ?")
+      .bind(Date.now())
+      .run();
     const result = await cleanupExpiredRooms(env.DB);
     logEvent(result.mayHaveMore ? "warn" : "info", "expired_rooms_cleanup", {
       ...result,

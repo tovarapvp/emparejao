@@ -3,3 +3,7 @@ VAPID_PRIVATE_KEY="TU_CLAVE_PRIVADA_BASE64URL"
 VAPID_SUBJECT="mailto:tu-correo@example.com"
 # Opcional: webhook entrante de Discord o Slack para alertas operativas.
 # ALERT_WEBHOOK_URL="https://..."
+
+# Acceso inicial al panel /admin. Usa un valor largo y aleatorio como secreto.
+SUPER_ADMIN_EMAIL="tovarapvp@gmail.com"
+ADMIN_SETUP_TOKEN="REEMPLAZA_CON_UNA_CLAVE_LARGA_DE_UN_SOLO_USO"

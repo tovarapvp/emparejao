@@ -18,6 +18,7 @@ Sorteos de parejas en vivo para eventos. El organizador crea una sala, define un
 - Limpieza automática por hora de salas vencidas y sus datos asociados.
 - Rate limiting para creación, ingreso y conexiones WebSocket.
 - Logs estructurados, endpoint de salud y alertas opcionales por webhook.
+- Panel privado de superadmin para supervisar salas, participantes y parejas.
 
 ## Tecnologías
 
@@ -52,12 +53,14 @@ El binding D1 debe llamarse `DB`. Las migraciones están en `drizzle/` y deben a
 
 1. `0000_stormy_pet_avengers.sql`
 2. `0001_great_mystique.sql`
+3. `0002_colossal_purifiers.sql`
 
 En el entorno local, después de construir:
 
 ```bash
 node --import ./scripts/sites-env.mjs ./node_modules/wrangler/bin/wrangler.js d1 execute DB --local --config dist/server/wrangler.json --persist-to .wrangler/state --file drizzle/0000_stormy_pet_avengers.sql
 node --import ./scripts/sites-env.mjs ./node_modules/wrangler/bin/wrangler.js d1 execute DB --local --config dist/server/wrangler.json --persist-to .wrangler/state --file drizzle/0001_great_mystique.sql
+node --import ./scripts/sites-env.mjs ./node_modules/wrangler/bin/wrangler.js d1 execute DB --local --config dist/server/wrangler.json --persist-to .wrangler/state --file drizzle/0002_colossal_purifiers.sql
 ```
 
 No vuelvas a ejecutar una migración que ya haya sido aplicada.
@@ -100,8 +103,24 @@ El polling de baja frecuencia queda únicamente como recuperación ante pérdida
 4. Opcionalmente agrega `CLOUDFLARE_D1_DATABASE_NAME=emparejao-db`.
 5. Usa `npm run build` como comando de build y `npx wrangler deploy --config dist/server/wrangler.json` como comando de deploy.
    El primer despliegue crea automáticamente la clase SQLite `RoomHub` y su binding `ROOM_HUB`.
-6. Antes de usar la aplicación, ejecuta en la consola SQL de D1 los archivos `drizzle/0000_stormy_pet_avengers.sql` y `drizzle/0001_great_mystique.sql`, en ese orden.
+6. Antes de usar la aplicación, ejecuta en la consola SQL de D1 los archivos `drizzle/0000_stormy_pet_avengers.sql`, `drizzle/0001_great_mystique.sql` y `drizzle/0002_colossal_purifiers.sql`, en ese orden.
 7. Después del primer despliegue configura `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY` y `VAPID_SUBJECT` en **Settings → Variables and Secrets**. Guarda las tres como secretos para que Wrangler no las reemplace.
+
+## Panel superadmin
+
+El panel privado está en `/admin`. El correo inicial es `tovarapvp@gmail.com` y puede sobrescribirse con `SUPER_ADMIN_EMAIL`.
+
+Antes del primer acceso:
+
+1. Aplica `drizzle/0002_colossal_purifiers.sql` en D1.
+2. Crea una clave aleatoria larga y guárdala como secreto `ADMIN_SETUP_TOKEN` en Cloudflare.
+3. Abre `/admin`, introduce esa clave inicial y crea tu contraseña personal de al menos 12 caracteres.
+
+La contraseña nunca se guarda directamente: se deriva con PBKDF2 y una sal aleatoria. La sesión administrativa usa una cookie `HttpOnly`, `SameSite=Strict`, dura 12 horas y los intentos de acceso tienen rate limiting. Después de configurar el superadmin puedes borrar `ADMIN_SETUP_TOKEN` de Cloudflare; ya no será necesario para iniciar sesión.
+
+El panel muestra las últimas 100 salas que todavía existan en D1, incluyendo su estado, cantidad de participantes, lista de personas y parejas agrupadas por nombre. Las salas y sus datos se eliminan automáticamente después de vencer, como parte de la política actual de retención de 24 horas.
+
+La corrección manual solo permite unir dos personas que estén realmente sin una pareja válida. No permite romper parejas existentes; cuando existe una sola persona libre se debe usar **Cambiar parejas** desde el panel del organizador.
 
 El despliegue también crea un Cron Trigger que ejecuta la limpieza cada hora. No hace falta agregarlo manualmente en el panel.
 
