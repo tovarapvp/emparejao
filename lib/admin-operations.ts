@@ -4,6 +4,7 @@ export const ADMIN_ROOM_ACTION = {
   EXTEND_EXPIRY: "extend_expiry",
   LOCK_JOINS: "lock_joins",
   UNLOCK_JOINS: "unlock_joins",
+  INCREASE_CAPACITY: "increase_capacity",
   RESET_DRAW: "reset_draw",
   REDRAW: "redraw",
   ARCHIVE: "archive",

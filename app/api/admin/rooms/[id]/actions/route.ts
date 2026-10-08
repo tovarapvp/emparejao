@@ -9,6 +9,7 @@ import { createChangedPairAssignments } from "@/lib/draw";
 import { publishRoomEvent } from "@/lib/room-events";
 
 const MAX_EXTENSION_MINUTES = 7 * 24 * 60;
+const MAX_PARTICIPANTS = 800;
 
 interface RouteContext {
   params: Promise<{ id: string }>;
@@ -17,6 +18,7 @@ interface RouteContext {
 interface ActionPayload {
   action?: unknown;
   minutes?: unknown;
+  expectedParticipants?: unknown;
 }
 
 interface ActionRoomRecord {
@@ -97,6 +99,7 @@ export async function POST(request: Request, context: RouteContext) {
     if (
       room.status === "drawing" &&
       (action === ADMIN_ROOM_ACTION.RESET_DRAW ||
+        action === ADMIN_ROOM_ACTION.INCREASE_CAPACITY ||
         action === ADMIN_ROOM_ACTION.REDRAW ||
         action === ADMIN_ROOM_ACTION.ARCHIVE)
     ) {
@@ -121,6 +124,70 @@ export async function POST(request: Request, context: RouteContext) {
         auditStatement(database, admin, "extend_expiry", room.id, { minutes, expiresAt }, now),
       ]);
       return Response.json({ action, expiresAt });
+    }
+
+    if (action === ADMIN_ROOM_ACTION.INCREASE_CAPACITY) {
+      const expectedParticipants = Number(payload?.expectedParticipants);
+      if (
+        !Number.isInteger(expectedParticipants) ||
+        expectedParticipants < 2 ||
+        expectedParticipants > MAX_PARTICIPANTS ||
+        expectedParticipants % 2 !== 0
+      ) {
+        return Response.json(
+          { error: `El nuevo cupo debe ser un número par entre 2 y ${MAX_PARTICIPANTS}.` },
+          { status: 400 },
+        );
+      }
+      if (expectedParticipants <= room.expected_participants) {
+        return Response.json(
+          { error: `El nuevo cupo debe ser mayor que ${room.expected_participants}.` },
+          { status: 400 },
+        );
+      }
+      if (room.expires_at <= now) {
+        return Response.json(
+          { error: "La sala ya venció. Extiende su vigencia antes de aumentar el cupo." },
+          { status: 409 },
+        );
+      }
+
+      const resetDraw = room.status === "drawn";
+      await database.batch([
+        database
+          .prepare(
+            `UPDATE participants
+             SET red_number = NULL, blue_number = NULL, result_viewed_at = NULL,
+                 pair_confirmed_at = NULL
+             WHERE room_id = ? AND ? = 1`,
+          )
+          .bind(room.id, resetDraw ? 1 : 0),
+        database
+          .prepare(
+            `UPDATE rooms
+             SET expected_participants = ?, status = 'lobby', join_locked = 0,
+                 version = version + 1
+             WHERE id = ?`,
+          )
+          .bind(expectedParticipants, room.id),
+        auditStatement(database, admin, action, room.id, {
+          previousExpectedParticipants: room.expected_participants,
+          expectedParticipants,
+          resetDraw,
+          participantCount: room.participant_count,
+        }, now),
+      ]);
+      await publishRoomEvent(room.code, {
+        type: "room_updated",
+        participantCount: room.participant_count,
+      });
+      return Response.json({
+        action,
+        expectedParticipants,
+        status: "lobby",
+        joinLocked: false,
+        resetDraw,
+      });
     }
 
     if (action === ADMIN_ROOM_ACTION.LOCK_JOINS || action === ADMIN_ROOM_ACTION.UNLOCK_JOINS) {
