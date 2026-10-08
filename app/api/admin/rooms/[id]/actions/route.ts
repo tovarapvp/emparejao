@@ -23,6 +23,8 @@ interface ActionRoomRecord {
   id: string;
   code: string;
   status: string;
+  expected_participants: number;
+  participant_count: number;
   expires_at: number;
   archived_at: number | null;
   join_locked: number;
@@ -67,8 +69,10 @@ async function roomAndAdmin(request: Request, roomId: string) {
   if (!admin) return { database, admin: null, room: null };
   const room = await database
     .prepare(
-      `SELECT id, code, status, expires_at, archived_at, join_locked
-       FROM rooms WHERE id = ? LIMIT 1`,
+      `SELECT r.id, r.code, r.status, r.expected_participants, r.expires_at,
+              r.archived_at, r.join_locked,
+              (SELECT COUNT(*) FROM participants p WHERE p.room_id = r.id) AS participant_count
+       FROM rooms r WHERE r.id = ? LIMIT 1`,
     )
     .bind(roomId)
     .first<ActionRoomRecord>();
@@ -120,6 +124,24 @@ export async function POST(request: Request, context: RouteContext) {
     }
 
     if (action === ADMIN_ROOM_ACTION.LOCK_JOINS || action === ADMIN_ROOM_ACTION.UNLOCK_JOINS) {
+      if (room.status !== "lobby") {
+        return Response.json(
+          {
+            error:
+              "Las entradas solo se pueden cambiar mientras la sala está en espera. Reinicia el sorteo si necesitas admitir más personas.",
+          },
+          { status: 409 },
+        );
+      }
+      if (
+        action === ADMIN_ROOM_ACTION.UNLOCK_JOINS &&
+        room.participant_count >= room.expected_participants
+      ) {
+        return Response.json(
+          { error: "La sala ya alcanzó su cupo máximo y no admite más personas." },
+          { status: 409 },
+        );
+      }
       const joinLocked = action === ADMIN_ROOM_ACTION.LOCK_JOINS;
       await database.batch([
         database
